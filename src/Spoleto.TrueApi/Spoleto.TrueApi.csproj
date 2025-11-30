@@ -1,0 +1,14 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Spoleto.CIS.Cryptography" Version="2.7.21.955" />
+    <PackageReference Include="Spoleto.Common" Version="3.6.28.1701" />
+  </ItemGroup>
+
+</Project>
