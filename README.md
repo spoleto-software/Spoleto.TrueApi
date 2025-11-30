@@ -1,6 +1,6 @@
 # Spoleto.TrueApi
 
-**Spoleto.TrueApi** is an unofficial library to work with True API.
+**Spoleto.TrueApi** is an unofficial library to work with [True API](https://docs.crpt.ru/gismt/True_API/).
 
 
 ## Installation
