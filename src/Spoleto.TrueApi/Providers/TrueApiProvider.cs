@@ -193,7 +193,7 @@ namespace Spoleto.TrueApi
             var path = $"/doc/{documentId}/info";
             if (productGroup != null)
             {
-                path += "?pg={productGroup}";
+                path += $"?pg={productGroup}";
             }
 
             var uri = new Uri(UriHelper.UrlCombine("https://markirovka.crpt.ru/api/v4/true-api", path)); //todo: hardcode
