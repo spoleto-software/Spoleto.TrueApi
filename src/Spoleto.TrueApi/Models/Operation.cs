@@ -53,6 +53,6 @@ namespace Spoleto.TrueApi
         /// Детали
         /// </summary>
         [JsonPropertyName("details")]
-        public OperationDetail[] Details { get; set; }
+        public OperationDetail Details { get; set; }
     }
 }

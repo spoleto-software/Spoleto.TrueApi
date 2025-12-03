@@ -25,12 +25,12 @@ namespace Spoleto.TrueApi
         /// Содержит текстовое значение кода ошибки
         /// </summary>
         [JsonPropertyName("error")]
-        public ErrorEntry[] Error { get; set; }
+        public ErrorEntry Error { get; set; }
 
         /// <summary>
         /// Содержит внутри себя детали ошибки
         /// </summary>
         [JsonPropertyName("data")]
-        public ErrorData[] Data { get; set; }
+        public ErrorData Data { get; set; }
     }
 }

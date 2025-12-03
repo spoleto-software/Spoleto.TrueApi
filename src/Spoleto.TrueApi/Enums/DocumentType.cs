@@ -399,6 +399,36 @@
         /// <remarks>
         /// Формируется оператором фискальных данных
         /// </remarks>
-        RECEIPT_RETURN
+        RECEIPT_RETURN,
+
+        /// <summary>
+        /// УПД
+        /// </summary>
+        UNIVERSAL_TRANSFER_DOCUMENT,
+
+        /// <summary>
+        /// УПД(и)
+        /// </summary>
+        UNIVERSAL_TRANSFER_DOCUMENT_FIX,
+
+        /// <summary>
+        /// УПД (отгрузка продукции)
+        /// </summary>
+        FIXATION,
+
+        /// <summary>
+        /// Отмена отгрузки по УПД
+        /// </summary>
+        FIXATION_CANCEL,
+
+        /// <summary>
+        /// УКД
+        /// </summary>
+        UNIVERSAL_CORRECTION_DOCUMENT,
+
+        /// <summary>
+        /// УКД(и)
+        /// </summary>
+        UNIVERSAL_CORRECTION_DOCUMENT_FIX
     }
 }

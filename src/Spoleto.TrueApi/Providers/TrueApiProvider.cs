@@ -33,6 +33,8 @@ namespace Spoleto.TrueApi
             _httpClient = httpClient;
             _disposeHttpClient = disposeHttpClient;
             _tokenProvider = tokenProvider;
+
+            _httpClient.ConfigureHttpClient();
         }
 
         #region IDisposable
@@ -87,7 +89,6 @@ namespace Spoleto.TrueApi
             bool isZipResponse = false)
         {
             var client = _httpClient;
-            client.ConfigureHttpClient();
 
             using var requestMessage = new HttpRequestMessage(method, uri);
             await InitHeaders(requestMessage, settings).ConfigureAwait(false);
@@ -187,9 +188,15 @@ namespace Spoleto.TrueApi
         /// <param name="productGroup">Группа документа.</param>
         /// <param name="documentId">Идентификатор документа.</param>
         /// <returns>Информации о документе.</returns>
-        public async Task<List<DocumentInfoReportModel<T>>> GetDocumentByIdAsync<T>(TrueApiProviderOption settings, ProductGroup productGroup, string documentId) where T : ITrueApiDocument
+        public async Task<List<DocumentInfoReportModel<T>>> GetDocumentByIdAsync<T>(TrueApiProviderOption settings, ProductGroup? productGroup, string documentId) where T : ITrueApiDocument
         {
-            var uri = new Uri(UriHelper.UrlCombine("https://markirovka.crpt.ru/api/v4/true-api", $"/doc/{documentId}/info?pg={productGroup}"));
+            var path = $"/doc/{documentId}/info";
+            if (productGroup != null)
+            {
+                path += "?pg={productGroup}";
+            }
+
+            var uri = new Uri(UriHelper.UrlCombine("https://markirovka.crpt.ru/api/v4/true-api", path)); //todo: hardcode
 
             return await InvokeAsync<List<DocumentInfoReportModel<T>>>(settings, uri, HttpMethod.Get).ConfigureAwait(false);
         }

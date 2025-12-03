@@ -36,7 +36,7 @@ namespace Spoleto.TrueApi
         /// <param name="productGroup">Группа документа.</param>
         /// <param name="documentId">Идентификатор документа.</param>
         /// <returns>Информации о документе.</returns>
-        List<DocumentInfoReportModel<T>> GetDocumentById<T>(TrueApiProviderOption settings, ProductGroup productGroup, string documentId) where T : ITrueApiDocument
+        List<DocumentInfoReportModel<T>> GetDocumentById<T>(TrueApiProviderOption settings, ProductGroup? productGroup, string documentId) where T : ITrueApiDocument
             => GetDocumentByIdAsync<T>(settings, productGroup, documentId).GetAwaiter().GetResult();
 
         /// <summary>
@@ -47,7 +47,7 @@ namespace Spoleto.TrueApi
         /// <param name="productGroup">Группа документа.</param>
         /// <param name="documentId">Идентификатор документа.</param>
         /// <returns>Информации о документе.</returns>
-        Task<List<DocumentInfoReportModel<T>>> GetDocumentByIdAsync<T>(TrueApiProviderOption settings, ProductGroup productGroup, string documentId) where T : ITrueApiDocument;
+        Task<List<DocumentInfoReportModel<T>>> GetDocumentByIdAsync<T>(TrueApiProviderOption settings, ProductGroup? productGroup, string documentId) where T : ITrueApiDocument;
 
         /// <summary>
         /// Метод для получения идентификатора заказа на создание кодов маркировки (идентификации).
