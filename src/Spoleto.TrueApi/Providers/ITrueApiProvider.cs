@@ -36,6 +36,27 @@ namespace Spoleto.TrueApi
         /// <param name="productGroup">Группа документа.</param>
         /// <param name="documentId">Идентификатор документа.</param>
         /// <returns>Информации о документе.</returns>
+        List<DocumentInfoReportModel> GetDocumentById(TrueApiProviderOption settings, ProductGroup? productGroup, string documentId)
+            => GetDocumentByIdAsync(settings, productGroup, documentId).GetAwaiter().GetResult();
+
+        /// <summary>
+        /// Получение информации о документе по его идентификатору.
+        /// </summary>
+        /// <typeparam name="T">Тип создаваемого документа.</typeparam>
+        /// <param name="settings">Настройки провайдера.</param>
+        /// <param name="productGroup">Группа документа.</param>
+        /// <param name="documentId">Идентификатор документа.</param>
+        /// <returns>Информации о документе.</returns>
+        Task<List<DocumentInfoReportModel>> GetDocumentByIdAsync(TrueApiProviderOption settings, ProductGroup? productGroup, string documentId);
+
+        /// <summary>
+        /// Получение информации о документе по его идентификатору.
+        /// </summary>
+        /// <typeparam name="T">Тип создаваемого документа.</typeparam>
+        /// <param name="settings">Настройки провайдера.</param>
+        /// <param name="productGroup">Группа документа.</param>
+        /// <param name="documentId">Идентификатор документа.</param>
+        /// <returns>Информации о документе.</returns>
         List<DocumentInfoReportModel<T>> GetDocumentById<T>(TrueApiProviderOption settings, ProductGroup? productGroup, string documentId) where T : ITrueApiDocument
             => GetDocumentByIdAsync<T>(settings, productGroup, documentId).GetAwaiter().GetResult();
 

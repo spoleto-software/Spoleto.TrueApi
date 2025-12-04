@@ -9,8 +9,29 @@ namespace Spoleto.TrueApi.Documents
     /// Общая информация, включая статус обработки документа, о запрашиваемом документе (в одном запросе указывается один документ).
     /// </remarks>
     /// <typeparam name="T">Тип документа.</typeparam>
-    public class DocumentInfoReportModel<T> : ITrueApiDocument
+    public class DocumentInfoReportModel : ITrueApiDocument
     {
+        /// <summary>
+        /// ID документа
+        /// </summary>
+        /// <remarks>
+        /// Указывается полное наименование файла для УД
+        /// </remarks>
+        [JsonPropertyName("number")]
+        public string Number { get; set; }
+
+        /// <summary>
+        /// Дата и время документа
+        /// </summary>
+        [JsonPropertyName("docDate")]
+        public DateTime DocDate { get; set; }
+
+        /// <summary>
+        /// Дата и время получения документа
+        /// </summary>
+        [JsonPropertyName("receivedAt")]
+        public DateTime ReceivedAt { get; set; }
+
         /// <summary>
         /// Тип документа
         /// </summary>
@@ -29,6 +50,47 @@ namespace Spoleto.TrueApi.Documents
         [JsonPropertyName("status")]
         public DocumentStatus DocumentStatus { get; set; }
 
+        /// <summary>
+        /// ИНН отправителя документа
+        /// </summary>
+        [JsonPropertyName("senderInn")]
+        public string SenderInn { get; set; }
+
+        /// <summary>
+        /// Наименование отправителя документа
+        /// </summary>
+        [JsonPropertyName("senderName")]
+        public string SenderName { get; set; }
+
+        /// <summary>
+        /// ИНН получателя документа
+        /// </summary>
+        [JsonPropertyName("receiverInn")]
+        public string ReceiverInn { get; set; }
+
+        /// <summary>
+        /// Наименование получателя документа
+        /// </summary>
+        [JsonPropertyName("receiverName")]
+        public string ReceiverName { get; set; }
+
+        /// <summary>
+        /// Номер счёта- фактуры, УКД
+        /// </summary>
+        [JsonPropertyName("invoiceNumber")]
+        public string InvoiceNumber { get; set; }
+
+        /// <summary>
+        /// Дата счёта- фактуры, УКД
+        /// </summary>
+        [JsonPropertyName("invoiceDate")]
+        public DateTime InvoiceDate { get; set; }
+
+        /// <summary>
+        /// ID документа отгрузки или приёмки
+        /// </summary>
+        [JsonPropertyName("relatedDocId")]
+        public string RelatedDocId { get; set; }
 
         /// <summary>
         /// Ошибки. Параметр возвращается при наличии ошибки.
@@ -39,6 +101,40 @@ namespace Spoleto.TrueApi.Documents
         [JsonPropertyName("errors")]
         public List<string> Errors { get; set; }
 
+        /// <summary>
+        /// Список общих ошибок обработки документа
+        /// </summary>
+        /// <remarks>
+        /// Значение параметра возвращается при наличии ошибки всех типов документов прямой подачи и УПД, УПДи, УКД, УКДи
+        /// </remarks>
+        [JsonPropertyName("commonErrors")]
+        public List<CommonError> CommonErrors { get; set; }
 
+        /// <summary>
+        /// Вид товарооборота
+        /// </summary>
+        [JsonPropertyName("turnoverType")]
+        public string TurnoverType { get; set; }
+
+        /// <summary>
+        /// Товарная группа
+        /// </summary>
+        [JsonPropertyName("productGroup")]
+        public List<string> ProductGroup { get; set; }
+
+        /// <summary>
+        /// ID товарной группы
+        /// </summary>
+        [JsonPropertyName("productGroupId")]
+        public List<int> ProductGroupId { get; set; }
+    }
+
+    public class DocumentInfoReportModel<T> : DocumentInfoReportModel where T : ITrueApiDocument
+    {
+        /// <summary>
+        /// Тело документа
+        /// </summary>
+        [JsonPropertyName("body")]
+        public T Body { get; set; }
     }
 }

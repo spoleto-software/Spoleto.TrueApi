@@ -188,12 +188,34 @@ namespace Spoleto.TrueApi
         /// <param name="productGroup">Группа документа.</param>
         /// <param name="documentId">Идентификатор документа.</param>
         /// <returns>Информации о документе.</returns>
-        public async Task<List<DocumentInfoReportModel<T>>> GetDocumentByIdAsync<T>(TrueApiProviderOption settings, ProductGroup? productGroup, string documentId) where T : ITrueApiDocument
+        public async Task<List<DocumentInfoReportModel>> GetDocumentByIdAsync(TrueApiProviderOption settings, ProductGroup? productGroup, string documentId)
         {
             var path = $"/doc/{documentId}/info";
             if (productGroup != null)
             {
                 path += $"?pg={productGroup}";
+            }
+
+            var uri = new Uri(UriHelper.UrlCombine("https://markirovka.crpt.ru/api/v4/true-api", path)); //todo: hardcode
+
+            return await InvokeAsync<List<DocumentInfoReportModel>>(settings, uri, HttpMethod.Get).ConfigureAwait(false);
+        }
+
+        // /api/v4/true-api/doc/{docId}/info
+        /// <summary>
+        /// Получение информации о документе по его идентификатору.
+        /// </summary>
+        /// <typeparam name="T">Тип создаваемого документа.</typeparam>
+        /// <param name="settings">Настройки провайдер.</param>
+        /// <param name="productGroup">Группа документа.</param>
+        /// <param name="documentId">Идентификатор документа.</param>
+        /// <returns>Информации о документе.</returns>
+        public async Task<List<DocumentInfoReportModel<T>>> GetDocumentByIdAsync<T>(TrueApiProviderOption settings, ProductGroup? productGroup, string documentId) where T : ITrueApiDocument
+        {
+            var path = $"/doc/{documentId}/info";
+            if (productGroup != null)
+            {
+                path += $"?pg={productGroup}&body=1";
             }
 
             var uri = new Uri(UriHelper.UrlCombine("https://markirovka.crpt.ru/api/v4/true-api", path)); //todo: hardcode
