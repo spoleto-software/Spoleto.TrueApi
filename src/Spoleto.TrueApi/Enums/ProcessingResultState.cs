@@ -5,7 +5,7 @@
         SUCCESS,
 
         FAILED,
-        
+
         IN_PROGRESS
     }
 }

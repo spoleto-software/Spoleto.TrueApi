@@ -54,7 +54,7 @@ namespace Spoleto.TrueApi
                 requestMessage.ConfigureRequestMessage();
 
                 var data = Convert.ToBase64String(DefaultSettings.Encoding.GetBytes(authKey.Data));
-                authKey.Data = CryptographyHelper.SignBase64Data(data, thumbprint: settings.Certificate.Thumbprint);
+                authKey.Data = CryptographyHelper.SignBase64Data(data, thumbprint: settings.CertificateThumbprint);
 
                 var authKeyJson = JsonHelper.ToJson(authKey);
                 requestMessage.Content = new StringContent(authKeyJson, DefaultSettings.Encoding, DefaultSettings.ContentType);

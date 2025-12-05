@@ -4,6 +4,6 @@
     {
         public string ServiceUrl { get; set; }
 
-        public CAPICOM.ICertificate Certificate { get; set; }
+        public string CertificateThumbprint { get; set; }
     }
 }
