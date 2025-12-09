@@ -1,5 +1,4 @@
 ﻿using System.Text.Json.Serialization;
-using CAPICOM;
 using CIS.Cryptography;
 using Spoleto.Common;
 using Spoleto.Common.Helpers;
@@ -13,14 +12,14 @@ namespace Spoleto.TrueApi.Documents
     /// <typeparam name="T">Тип документа.</typeparam>
     public class DocumentInfoModel<T> where T : ITrueApiDocument
     {
-        private readonly ICertificate _certificate;
+        private readonly string _certificateThumbprint;
 
         private string _signature;
         private string _productDocument;
 
-        public DocumentInfoModel(ICertificate certificate)
+        public DocumentInfoModel(string certificateThumbprint)
         {
-            _certificate = certificate;
+            _certificateThumbprint = certificateThumbprint;
         }
 
         /// <summary>
@@ -57,7 +56,7 @@ namespace Spoleto.TrueApi.Documents
                 if (_signature == null)
                 {
                     var productDocumentBase64 = ProductDocument;
-                    _signature = CryptographyHelper.SignBase64Data(productDocumentBase64, detached: true, thumbprint: _certificate.Thumbprint);
+                    _signature = CryptographyHelper.SignBase64Data(productDocumentBase64, detached: true, thumbprint: _certificateThumbprint);
                 }
 
                 return _signature;
