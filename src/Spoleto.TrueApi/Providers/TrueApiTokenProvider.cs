@@ -11,6 +11,7 @@ namespace Spoleto.TrueApi
 
         public TrueApiTokenProvider() : this(new HttpClient(), true)
         {
+            _httpClient.ConfigureHttpClient();
         }
 
         public TrueApiTokenProvider(HttpClient httpClient, bool disposeHttpClient)
@@ -44,7 +45,6 @@ namespace Spoleto.TrueApi
         public async Task<TokenModel> GetTokenAsync(TrueApiProviderOption settings)
         {
             var client = _httpClient;
-            client.ConfigureHttpClient();
 
             var authKey = await GetAuthKey(client, settings).ConfigureAwait(false);
 

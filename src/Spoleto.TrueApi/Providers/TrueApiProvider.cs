@@ -22,6 +22,7 @@ namespace Spoleto.TrueApi
 
         public TrueApiProvider() : this(new HttpClient(), true)
         {
+            _httpClient.ConfigureHttpClient();
         }
 
         public TrueApiProvider(HttpClient httpClient, bool disposeHttpClient) : this(httpClient, disposeHttpClient, new TrueApiTokenProvider(httpClient, false))
@@ -33,8 +34,6 @@ namespace Spoleto.TrueApi
             _httpClient = httpClient;
             _disposeHttpClient = disposeHttpClient;
             _tokenProvider = tokenProvider;
-
-            _httpClient.ConfigureHttpClient();
         }
 
         #region IDisposable

@@ -14,6 +14,7 @@ namespace Spoleto.TrueApi
 
         public TrueApiNkProvider() : this(new HttpClient(), true)
         {
+            _httpClient.ConfigureHttpClient();
         }
 
         public TrueApiNkProvider(HttpClient httpClient, bool disposeHttpClient)
@@ -28,7 +29,6 @@ namespace Spoleto.TrueApi
         private async Task<T> InvokeAsync<T>(Uri uri, HttpMethod method, string requestJsonContent = null)
         {
             var client = _httpClient;
-            client.ConfigureHttpClient();
 
             using var requestMessage = new HttpRequestMessage(method, uri);
             requestMessage.ConfigureRequestMessage();
