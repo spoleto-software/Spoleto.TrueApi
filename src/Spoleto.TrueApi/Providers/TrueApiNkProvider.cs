@@ -1,6 +1,8 @@
 ﻿using System.Text;
+using System.Text.Json;
 using Spoleto.Common;
 using Spoleto.Common.Helpers;
+using Spoleto.TrueApi.Exceptions;
 
 namespace Spoleto.TrueApi
 {
@@ -42,8 +44,15 @@ namespace Spoleto.TrueApi
             var result = await responseMessage.Content.ReadAsStringAsync().ConfigureAwait(false);
             if (responseMessage.IsSuccessStatusCode)
             {
-                var nkContainer = JsonHelper.FromJson<T>(result);
-                return nkContainer;
+                try
+                {
+                    var nkContainer = JsonHelper.FromJson<T>(result);
+                    return nkContainer;
+                }
+                catch (JsonException ex)
+                {
+                    throw new JsonParsingException(result, ex);
+                }
             }
 
             else if (!String.IsNullOrEmpty(result))

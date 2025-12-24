@@ -5,6 +5,7 @@ using System.Text.Json;
 using Spoleto.Common;
 using Spoleto.Common.Helpers;
 using Spoleto.TrueApi.Documents;
+using Spoleto.TrueApi.Exceptions;
 
 
 namespace Spoleto.TrueApi
@@ -60,17 +61,24 @@ namespace Spoleto.TrueApi
 
         private static T FromResult<T>(string bodyJson)
         {
-            if (typeof(T) == typeof(string))
+            try
             {
-                if (Guid.TryParse(bodyJson, out var guidRes))
-                    return (T)((object)guidRes.ToString());
-                else if (long.TryParse(bodyJson, out var longRes))
-                    return (T)((object)longRes.ToString());
+                if (typeof(T) == typeof(string))
+                {
+                    if (Guid.TryParse(bodyJson, out var guidRes))
+                        return (T)((object)guidRes.ToString());
+                    else if (long.TryParse(bodyJson, out var longRes))
+                        return (T)((object)longRes.ToString());
+                    else
+                        return JsonHelper.FromJson<T>(bodyJson);
+                }
                 else
                     return JsonHelper.FromJson<T>(bodyJson);
             }
-            else
-                return JsonHelper.FromJson<T>(bodyJson);
+            catch (JsonException ex)
+            {
+                throw new JsonParsingException(bodyJson, ex);
+            }
         }
 
         private async Task InitHeaders(HttpRequestMessage requestMessage, TrueApiProviderOption settings)
