@@ -116,6 +116,21 @@
         LP_SHIP_GOODS_CROSSBORDER,
 
         /// <summary>
+        /// Отгрузка в ЕАЭС (ОСУ). JSON
+        /// </summary>
+        EAS_GTIN_CROSSBORDER_EXPORT,
+
+        /// <summary>
+        /// Отгрузка в ЕАЭС (ОСУ). JSON
+        /// </summary>
+        EAS_GTIN_CROSSBORDER_EXPORT_CSV,
+
+        /// <summary>
+        /// Отчёт о перевзвешивании. JSON
+        /// </summary>
+        REPORT_REWEIGHING,
+
+        /// <summary>
         /// Приемка. JSON
         /// </summary>
         LP_ACCEPT_GOODS,
@@ -124,6 +139,16 @@
         /// Приемка. XML
         /// </summary>
         LP_ACCEPT_GOODS_XML,
+
+        /// <summary>
+        /// Приёмка из ЕАЭС (ОСУ). JSON
+        /// </summary>
+        EAS_GTIN_CROSSBORDER_ACCEPTANCE,
+
+        /// <summary>
+        /// Приёмка из ЕАЭС (ОСУ). CSV
+        /// </summary>
+        EAS_GTIN_CROSSBORDER_ACCEPTANCE_CSV,
 
         /// <summary>
         /// Перемаркировка. JSON
@@ -276,7 +301,7 @@
         CROSSBORDER,
 
         /// <summary>
-        /// Ввод в оборот. Трансграничная торговля (Мех). JSON
+        /// Ввод в оборот. Трансграничная торговля («Товары из натурального меха»). JSON
         /// </summary>
         FURS_CROSSBORDER,
 
@@ -306,6 +331,11 @@
         LK_RECEIPT_XML,
 
         /// <summary>
+        /// Отмена вывода из оборота. JSON
+        /// </summary>
+        LK_RECEIPT_CANCEL,
+
+        /// <summary>
         /// Ввод в оборот. На территории стран ЕАЭС (контрактное производство). JSON (MANUAL)
         /// </summary>
         LP_INTRODUCE_GOODS_CROSSBORDER_CSD_JSON,
@@ -326,11 +356,6 @@
         LP_FTS_INTRODUCE,
 
         /// <summary>
-        /// Ввод в оборот. Импорт с ФТС (Мех). JSON
-        /// </summary>
-        FURS_FTS_INTRODUCE,
-
-        /// <summary>
         /// Ввод в оборот. Импорт с ФТС. XML
         /// </summary>
         LP_FTS_INTRODUCE_XML,
@@ -339,6 +364,11 @@
         /// Ввод в оборот. Импорт с ФТС. CSV
         /// </summary>
         LP_FTS_INTRODUCE_CSV,
+
+        /// <summary>
+        /// Ввод в оборот. Импорт с ФТС (Мех). JSON
+        /// </summary>
+        FURS_FTS_INTRODUCE,
 
         /// <summary>
         /// Формирование АТК. JSON (MANUAL)
@@ -386,6 +416,26 @@
         ATK_DISAGGREGATION_XML,
 
         /// <summary>
+        /// Списание (общий документ). JSON
+        /// </summary>
+        WRITE_OFF,
+
+        /// <summary>
+        /// Отчёт о нанесении ФСМ. JSON
+        /// </summary>
+        ALCO_UTILISED,
+
+        /// <summary>
+        /// Отгрузка в ЕАЭС. JSON
+        /// </summary>
+        EAS_CROSSBORDER_EXPORT,
+
+        /// <summary>
+        /// Отгрузка в ЕАЭС. CSV
+        /// </summary>
+        EAS_CROSSBORDER_EXPORT_CSV,
+
+        /// <summary>
         /// Чек
         /// </summary>
         /// <remarks>
@@ -402,33 +452,73 @@
         RECEIPT_RETURN,
 
         /// <summary>
-        /// УПД
+        /// Индивидуализация КиЗ («Товары из натурального меха»). JSON
+        /// </summary>
+        LK_INDIVIDUALIZATION,
+
+        /// <summary>
+        /// Индивидуализация КиЗ («Товары из натурального меха»). XML
+        /// </summary>
+        LK_INDIVIDUALIZATION_XML,
+
+        /// <summary>
+        /// Вывод из оборота (ОСУ). JSON
+        /// </summary>
+        LK_GTIN_RECEIPT,
+
+        /// <summary>
+        /// Отмена вывода из оборота (ОСУ). JSON
+        /// </summary>
+        LK_GTIN_RECEIPT_CANCEL,
+
+        /// <summary>
+        /// Корректировка сведений о кодах. JSON
+        /// </summary>
+        CIS_INFORMATION_CHANGE,
+
+        /// <summary>
+        /// Уведомление о состоянии кодов. JSON
+        /// </summary>
+        CIS_NOTICE,
+
+        /// <summary>
+        /// Подключение кега к оборудованию для розлива. JSON
+        /// </summary>
+        CONNECT_TAP,
+
+        /// <summary>
+        /// УПД. XML
         /// </summary>
         UNIVERSAL_TRANSFER_DOCUMENT,
 
         /// <summary>
-        /// УПД(и)
+        /// УПД(и). XML
         /// </summary>
         UNIVERSAL_TRANSFER_DOCUMENT_FIX,
 
         /// <summary>
-        /// УПД (отгрузка продукции)
+        /// УПД (отгрузка продукции). XML.
         /// </summary>
         FIXATION,
 
         /// <summary>
-        /// Отмена отгрузки по УПД
+        /// Отмена отгрузки по УПД. JSON
         /// </summary>
         FIXATION_CANCEL,
 
         /// <summary>
-        /// УКД
+        /// УКД. XML
         /// </summary>
         UNIVERSAL_CORRECTION_DOCUMENT,
 
         /// <summary>
-        /// УКД(и)
+        /// УКД(и). XML
         /// </summary>
-        UNIVERSAL_CORRECTION_DOCUMENT_FIX
+        UNIVERSAL_CORRECTION_DOCUMENT_FIX,
+
+        /// <summary>
+        /// Аннулирование УД
+        /// </summary>
+        UNIVERSAL_CANCEL_DOCUMENT
     }
 }

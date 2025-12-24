@@ -172,7 +172,7 @@ namespace Spoleto.TrueApi
         public string WithdrawReason { get; set; }
 
         /// <summary>
-        /// Причина выбытия
+        /// Список лицензий
         /// </summary>
         [JsonPropertyName("licences")]
         public List<Licence> Licences { get; set; }

@@ -16,11 +16,6 @@
         APPLIED,
 
         /// <summary>
-        /// Applied but not paid.
-        /// </summary>
-        APPLIED_NOT_PAID,
-
-        /// <summary>
         /// Введён в оборот
         /// </summary>
         INTRODUCED,
@@ -53,6 +48,11 @@
         /// <summary>
         /// Расформирован (только для КИТУ и АТК ТГ "Табачная продукция" и "Альтернативная табачная продукция")
         /// </summary>
-        DISAGGREGATED
+        DISAGGREGATED,
+
+        /// <summary>
+        /// Не оплачен (только для товарных групп «Альтернативная табачная продукция», «Никотиносодержащая продукция», «Табачная продукция»)
+        /// </summary>
+        APPLIED_NOT_PAID
     }
 }

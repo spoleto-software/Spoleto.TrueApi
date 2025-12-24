@@ -23,6 +23,21 @@
         /// <summary>
         /// Ввезён из стран ЕАЭС
         /// </summary>
-        CROSSBORDER
+        CROSSBORDER,
+
+        /// <summary>
+        /// Перемаркировка
+        /// </summary>
+        REMARK,
+
+        /// <summary>
+        /// Принят на комиссию от физического лица
+        /// </summary>
+        COMMISSION,
+
+        /// <summary>
+        /// Маркировка вне производства или импорта
+        /// </summary>
+        REAPPLY
     }
 }
