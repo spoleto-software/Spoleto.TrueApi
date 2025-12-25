@@ -66,31 +66,42 @@ namespace Spoleto.TrueApi.Documents
         /// ИНН получателя документа
         /// </summary>
         [JsonPropertyName("receiverInn")]
-        public string ReceiverInn { get; set; }
+        public string? ReceiverInn { get; set; }
 
         /// <summary>
         /// Наименование получателя документа
         /// </summary>
         [JsonPropertyName("receiverName")]
-        public string ReceiverName { get; set; }
+        public string? ReceiverName { get; set; }
 
         /// <summary>
         /// Номер счёта- фактуры, УКД
         /// </summary>
         [JsonPropertyName("invoiceNumber")]
-        public string InvoiceNumber { get; set; }
+        public string? InvoiceNumber { get; set; }
 
         /// <summary>
         /// Дата счёта- фактуры, УКД
         /// </summary>
         [JsonPropertyName("invoiceDate")]
-        public DateTime InvoiceDate { get; set; }
+        public DateTime? InvoiceDate { get; set; }
 
         /// <summary>
         /// ID документа отгрузки или приёмки
         /// </summary>
         [JsonPropertyName("relatedDocId")]
-        public string RelatedDocId { get; set; }
+        public string? RelatedDocId { get; set; }
+
+        /// <summary>
+        /// Признак входящего документа
+        /// </summary>
+        /// <remarks>
+        /// Возможные значения:<br/>
+        /// true — документ является входящим;<br/>
+        /// false — документ является исходящим
+        /// </remarks>
+        [JsonPropertyName("input")]
+        public bool? Input { get; set; }
 
         /// <summary>
         /// Ошибки. Параметр возвращается при наличии ошибки.
@@ -99,7 +110,7 @@ namespace Spoleto.TrueApi.Documents
         /// Для УД ошибки не возвращаются. Используется для вывода ошибок по документа ГИС прямой подачи сведений
         /// </remarks>
         [JsonPropertyName("errors")]
-        public List<string> Errors { get; set; }
+        public List<string>? Errors { get; set; }
 
         /// <summary>
         /// Список общих ошибок обработки документа
@@ -108,13 +119,13 @@ namespace Spoleto.TrueApi.Documents
         /// Значение параметра возвращается при наличии ошибки всех типов документов прямой подачи и УПД, УПДи, УКД, УКДи
         /// </remarks>
         [JsonPropertyName("commonErrors")]
-        public List<CommonError> CommonErrors { get; set; }
+        public List<CommonError>? CommonErrors { get; set; }
 
         /// <summary>
         /// Вид товарооборота
         /// </summary>
         [JsonPropertyName("turnoverType")]
-        public string TurnoverType { get; set; }
+        public string? TurnoverType { get; set; }
 
         /// <summary>
         /// Товарная группа
