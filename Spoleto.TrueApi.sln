@@ -20,6 +20,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "GitHub Actions", "GitHub Ac
 		.github\workflows\ci.yml = .github\workflows\ci.yml
 	EndProjectSection
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Spoleto.TrueApi.Tests", "src\Spoleto.TrueApi.Tests\Spoleto.TrueApi.Tests.csproj", "{00C0D5E1-1383-4EA5-938F-264D810A54DA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Spoleto.TrueApi.Auth", "src\Spoleto.TrueApi.Auth\Spoleto.TrueApi.Auth.csproj", "{238F2C84-38DB-4239-BB12-C0D49BD2DCAA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -30,6 +34,14 @@ Global
 		{C3EFF3BF-93A8-485F-8412-89F62651DADF}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C3EFF3BF-93A8-485F-8412-89F62651DADF}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C3EFF3BF-93A8-485F-8412-89F62651DADF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{00C0D5E1-1383-4EA5-938F-264D810A54DA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{00C0D5E1-1383-4EA5-938F-264D810A54DA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{00C0D5E1-1383-4EA5-938F-264D810A54DA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{00C0D5E1-1383-4EA5-938F-264D810A54DA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{238F2C84-38DB-4239-BB12-C0D49BD2DCAA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{238F2C84-38DB-4239-BB12-C0D49BD2DCAA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{238F2C84-38DB-4239-BB12-C0D49BD2DCAA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{238F2C84-38DB-4239-BB12-C0D49BD2DCAA}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -1,13 +1,19 @@
 ﻿using CIS.Cryptography;
 using Spoleto.Common;
 using Spoleto.Common.Helpers;
+using Spoleto.TrueApi.Auth.Extensions;
+using Spoleto.TrueApi.Auth.Helpers;
+using Spoleto.TrueApi.Auth.Models;
+using Spoleto.TrueApi.Auth.Models.Options;
 
-namespace Spoleto.TrueApi
+namespace Spoleto.TrueApi.Auth.Providers
 {
     public class TrueApiTokenProvider : ITrueApiTokenProvider
     {
         private readonly HttpClient _httpClient;
         private readonly bool _disposeHttpClient;
+
+        private TokenModel? _token;
 
         public TrueApiTokenProvider() : this(new HttpClient(), true)
         {
@@ -42,13 +48,18 @@ namespace Spoleto.TrueApi
         }
         #endregion
 
-        public async Task<TokenModel> GetTokenAsync(TrueApiProviderOption settings)
+        public async Task<TokenModel> GetTokenAsync(TrueApiTokenProviderOption settings)
         {
+            if (_token != null)
+            {
+                return _token;
+            }
+
             var client = _httpClient;
 
             var authKey = await GetAuthKey(client, settings).ConfigureAwait(false);
 
-            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, "auth/simpleSignIn"));
+            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, "/api/v3/true-api/auth/simpleSignIn"));
             using (var requestMessage = new HttpRequestMessage(HttpMethod.Post, uri))
             {
                 requestMessage.ConfigureRequestMessage();
@@ -63,17 +74,16 @@ namespace Spoleto.TrueApi
                     var result = await responseMessage.Content.ReadAsStringAsync().ConfigureAwait(false);
                     if (responseMessage.IsSuccessStatusCode)
                     {
-                        TokenModel tokenModel = null;
                         try
                         {
-                            tokenModel = JsonHelper.FromJson<TokenModel>(result);
+                            _token = JsonHelper.FromJson<TokenModel>(result);
                         }
                         catch (Exception e)
                         {
                             throw new Exception($"Ошибка формирования токена доступа\n{result}");
                         }
 
-                        return tokenModel;
+                        return _token;
                     }
                     else if (!string.IsNullOrEmpty(result))
                     {
@@ -97,9 +107,9 @@ namespace Spoleto.TrueApi
             }
         }
 
-        private async Task<AuthKeyModel> GetAuthKey(HttpClient client, TrueApiProviderOption settings)
+        private async Task<AuthKeyModel> GetAuthKey(HttpClient client, TrueApiTokenProviderOption settings)
         {
-            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, "auth/key"));
+            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, "/api/v3/true-api/auth/key"));
             using (var requestMessage = new HttpRequestMessage(HttpMethod.Get, uri))
             {
                 requestMessage.ConfigureRequestMessage();
@@ -132,6 +142,11 @@ namespace Spoleto.TrueApi
                     }
                 }
             }
+        }
+
+        public void SetTokenExpired()
+        {
+            _token = null;
         }
     }
 }

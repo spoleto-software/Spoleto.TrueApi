@@ -1,6 +1,6 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace Spoleto.TrueApi
+namespace Spoleto.TrueApi.Auth.Models
 {
     /// <summary>
     ///  Пакет успешного ответа на запрос получения предварительного ключа перед запросом токена

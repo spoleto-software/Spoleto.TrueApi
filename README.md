@@ -1,14 +1,21 @@
 # Spoleto.TrueApi
 
 **Spoleto.TrueApi** is an unofficial library to work with [True API](https://docs.crpt.ru/gismt/True_API/).
+**Spoleto.TrueApi.Auth** is an unofficial library to work with authentication of [True API](https://docs.crpt.ru/gismt/True_API/).
 
 
 ## Installation
 
 To install the library, use the following package manager, for example, NuGet:
 
+Spoleto.TrueApi:
 ```bash
 Install-Package Spoleto.TrueApi
+```
+
+Spoleto.TrueApi.Auth
+```bash
+Install-Package Spoleto.TrueApi.Auth
 ```
 
 ## Usage
@@ -16,6 +23,10 @@ Install-Package Spoleto.TrueApi
 
 
 ```csharp
+var trueApiTokenProvider = new TrueApiTokenProvider()
+var trueApiProvider = new TrueApiProvider(new HttpClient(), true, trueApiTokenProvider);
+
+// or default:
 var trueApiProvider = new TrueApiProvider();
 ```
 

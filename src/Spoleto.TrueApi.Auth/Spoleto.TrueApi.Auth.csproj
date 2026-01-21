@@ -8,9 +8,9 @@
 
     <!-- Package info -->
     <PropertyGroup>
-        <Title>Spoleto.TrueApi</Title>
-        <PackageId>Spoleto.TrueApi</PackageId>
-        <Description>TrueApi provider for CRPT</Description>
+        <Title>Spoleto.TrueApi.Auth</Title>
+        <PackageId>Spoleto.TrueApi.Auth</PackageId>
+        <Description>TrueApi auth provider for CRPT</Description>
     </PropertyGroup>
 
     <ItemGroup>
@@ -18,8 +18,5 @@
         <PackageReference Include="Spoleto.Common" Version="3.6.28.1701" />
     </ItemGroup>
 
-    <ItemGroup>
-        <ProjectReference Include="..\Spoleto.TrueApi.Auth\Spoleto.TrueApi.Auth.csproj" />
-    </ItemGroup>
 
 </Project>

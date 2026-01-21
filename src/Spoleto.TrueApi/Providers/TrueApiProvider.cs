@@ -4,6 +4,8 @@ using System.Text;
 using System.Text.Json;
 using Spoleto.Common;
 using Spoleto.Common.Helpers;
+using Spoleto.TrueApi.Auth.Models;
+using Spoleto.TrueApi.Auth.Providers;
 using Spoleto.TrueApi.Documents;
 using Spoleto.TrueApi.Exceptions;
 
@@ -16,7 +18,6 @@ namespace Spoleto.TrueApi
     public class TrueApiProvider : ITrueApiProvider
     {
         private readonly ITrueApiTokenProvider _tokenProvider;
-        private string _token;
 
         private readonly HttpClient _httpClient;
         private readonly bool _disposeHttpClient;
@@ -86,11 +87,10 @@ namespace Spoleto.TrueApi
             requestMessage.ConfigureRequestMessage();
 
             var token = await GetTokenAsync(settings).ConfigureAwait(false);
-            requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
         }
 
-        private async Task<string> GetTokenAsync(TrueApiProviderOption settings) => _token ??= (await _tokenProvider.GetTokenAsync(settings).ConfigureAwait(false)).Token;
-
+        private Task<TokenModel> GetTokenAsync(TrueApiProviderOption settings) => _tokenProvider.GetTokenAsync(new(settings.ServiceUrl, settings.CertificateThumbprint));
 
         private async Task<T> InvokeAsync<T>(TrueApiProviderOption settings, Uri uri, HttpMethod method, string requestJsonContent = null,
             bool isZipResponse = false)
@@ -147,7 +147,7 @@ namespace Spoleto.TrueApi
                         if (responseMessage.StatusCode == System.Net.HttpStatusCode.Unauthorized
                             && errorModel?.ErrorMessage == "unauthorized")//ExpiredToken Переданный токен не активен
                         {
-                            _token = null;
+                            _tokenProvider.SetTokenExpired();
                             return await InvokeAsync<T>(settings, uri, method, requestJsonContent).ConfigureAwait(false);
                         }
 
@@ -179,7 +179,7 @@ namespace Spoleto.TrueApi
         /// <returns>Идентификатор созданного документа.</returns>
         public async Task<string> CreateDocumentAsync<T>(TrueApiProviderOption settings, DocumentInfoModel<T> documentInfo, ProductGroup productGroup) where T : ITrueApiDocument
         {
-            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/lk/documents/create?pg={productGroup}"));
+            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/api/v3/true-api/lk/documents/create?pg={productGroup}"));
 
             var documentInfoJson = JsonHelper.ToJson(documentInfo);
 
@@ -197,13 +197,13 @@ namespace Spoleto.TrueApi
         /// <returns>Информации о документе.</returns>
         public async Task<List<DocumentInfoReportModel>> GetDocumentByIdAsync(TrueApiProviderOption settings, ProductGroup? productGroup, string documentId)
         {
-            var path = $"/doc/{documentId}/info";
+            var path = $"/api/v4/true-api/doc/{documentId}/info";
             if (productGroup != null)
             {
                 path += $"?pg={productGroup}";
             }
 
-            var uri = new Uri(UriHelper.UrlCombine("https://markirovka.crpt.ru/api/v4/true-api", path)); //todo: hardcode
+            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, path));
 
             return await InvokeAsync<List<DocumentInfoReportModel>>(settings, uri, HttpMethod.Get).ConfigureAwait(false);
         }
@@ -219,13 +219,14 @@ namespace Spoleto.TrueApi
         /// <returns>Информации о документе.</returns>
         public async Task<List<DocumentInfoReportModel<T>>> GetDocumentByIdAsync<T>(TrueApiProviderOption settings, ProductGroup? productGroup, string documentId) where T : ITrueApiDocument
         {
-            var path = $"/doc/{documentId}/info";
+            var path = $"/api/v4/true-api/doc/{documentId}/info";
             if (productGroup != null)
             {
                 path += $"?pg={productGroup}&body=1";
             }
 
-            var uri = new Uri(UriHelper.UrlCombine("https://markirovka.crpt.ru/api/v4/true-api", path)); //todo: hardcode
+            var url = settings.ServiceUrl.Replace("/v3/", "/v4/");
+            var uri = new Uri(UriHelper.UrlCombine(url, path));
 
             return await InvokeAsync<List<DocumentInfoReportModel<T>>>(settings, uri, HttpMethod.Get).ConfigureAwait(false);
         }
@@ -242,7 +243,7 @@ namespace Spoleto.TrueApi
         [Obsolete]
         public async Task<string> GetCisOrderIdAsync(TrueApiProviderOption settings, CisOrderSearchInfoModel cisOrderSearchInfo)
         {
-            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/cises/my"));
+            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/api/v3/true-api/cises/my"));
 
             var cisOrderSearchInfoJson = JsonHelper.ToJson(cisOrderSearchInfo);
 
@@ -263,7 +264,7 @@ namespace Spoleto.TrueApi
         [Obsolete]
         public async Task<CisOrderStatus> GetCisOrderStatusAsync(TrueApiProviderOption settings, string cisOrderUuid)
         {
-            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/cises/orders/{cisOrderUuid}/status"));
+            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/api/v3/true-api/cises/orders/{cisOrderUuid}/status"));
 
             var result = await InvokeAsync<CisOrderStatus>(settings, uri, HttpMethod.Get).ConfigureAwait(false);
 
@@ -282,7 +283,7 @@ namespace Spoleto.TrueApi
         [Obsolete]
         public async Task<List<CisFullInfoModel>> GetCisFullInfoListAsync(TrueApiProviderOption settings, string cisOrderUuid)
         {
-            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/cises/orders/{cisOrderUuid}/result"));
+            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/api/v3/true-api/cises/orders/{cisOrderUuid}/result"));
 
             return await InvokeAsync<List<CisFullInfoModel>>(settings, uri, HttpMethod.Get, isZipResponse: true).ConfigureAwait(false);
         }
@@ -303,7 +304,7 @@ namespace Spoleto.TrueApi
             List<string> cisList, ProductGroup? productGroup = null)
         {
             int maxCount = 999;
-            var urlString = new StringBuilder(UriHelper.UrlCombine(settings.ServiceUrl, "/cises/info"));
+            var urlString = new StringBuilder(UriHelper.UrlCombine(settings.ServiceUrl, "/api/v3/true-api/cises/info"));
             if (productGroup != null)
             {
                 urlString.Append($"?pg={productGroup}");
@@ -345,7 +346,7 @@ namespace Spoleto.TrueApi
         ///// <returns>Подробная информация о списке запрашиваемых кодов идентификации (КИ).</returns>
         //public async Task<List<CisInfoModel>> GetCisInfoListAsync(TrueApiProviderOption settings, List<string> cisList)
         //{
-        //    var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/cises/list?{string.Join("&", cisList.Select(x => "values=" + System.Web.HttpUtility.UrlEncode(x)))}"));
+        //    var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/api/v3/true-api/cises/list?{string.Join("&", cisList.Select(x => "values=" + System.Web.HttpUtility.UrlEncode(x)))}"));
 
         //    return await InvokeAsync<List<CisInfoModel>>(settings, uri, HttpMethod.Post).ConfigureAwait(false);
         //}
@@ -365,7 +366,7 @@ namespace Spoleto.TrueApi
         {
             //settings.ServiceUrl.Replace("/v3/", "/v4/")
             var searchInfoModelJson = JsonHelper.ToJson(searchCisList.ToArray());
-            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/cises/short/list"));
+            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/api/v3/true-api/cises/short/list"));
             return await InvokeAsync<List<CisShortInfoContainerModel>>(settings, uri, HttpMethod.Post, searchInfoModelJson).ConfigureAwait(false);
 
         }
@@ -382,7 +383,7 @@ namespace Spoleto.TrueApi
         //{
         //    //settings.ServiceUrl = settings.ServiceUrl.Replace("/v3/", "/v4/");
         //    var searchInfoModelJson = JsonHelper.ToJson(searchCisList.ToArray());
-        //    var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/cises/info"));
+        //    var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/api/v3/true-api/cises/info"));
 
         //    return await InvokeAsync<List<ProductFullInfoContainerModel>>(settings, uri, HttpMethod.Post).ConfigureAwait(false);
         //}
@@ -400,7 +401,7 @@ namespace Spoleto.TrueApi
             TnvedSearchModel searchInfoModel)
         {
             var searchInfoModelQuery = HttpHelper.ToQueryString(searchInfoModel);
-            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/facade/tnved/search?{searchInfoModelQuery}"));
+            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/api/v3/true-api/facade/tnved/search?{searchInfoModelQuery}"));
 
             return await InvokeAsync<TnvedInfoContainerModel>(settings, uri, HttpMethod.Get).ConfigureAwait(false);
         }
@@ -415,7 +416,7 @@ namespace Spoleto.TrueApi
         public async Task<List<ProductGroupInfoModel>> GetProductGroupInfoListAsync(TrueApiProviderOption settings, ProductGroupSearchModel searchInfoModel)
         {
             var searchInfoModelJson = JsonHelper.ToJson(searchInfoModel);
-            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/product/route/gtin"));
+            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/api/v3/true-api/product/route/gtin"));
 
             return await InvokeAsync<List<ProductGroupInfoModel>>(settings, uri, HttpMethod.Post, searchInfoModelJson).ConfigureAwait(false);
         }
@@ -430,7 +431,7 @@ namespace Spoleto.TrueApi
         public async Task<DispenserTaskModel> CreateDispenserTaskCisListByFilterAsync(TrueApiProviderOption settings, CisSearchModel searchModel)
         {
             var searchModelJson = JsonHelper.ToJson(searchModel);
-            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/dispenser/tasks"));
+            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/api/v3/true-api/dispenser/tasks"));
 
             return await InvokeAsync<DispenserTaskModel>(settings, uri, HttpMethod.Post, searchModelJson).ConfigureAwait(false);
         }
@@ -445,7 +446,7 @@ namespace Spoleto.TrueApi
         /// <returns>Текущий статус задания на выгрузку + информация, необходимая пользователю для дальнейшей работы.</returns>
         public async Task<DispenserTaskStatusModel> GetDispenserTaskStatusAsync(TrueApiProviderOption settings, string taskId, ProductGroup productGroup)
         {
-            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/dispenser/tasks/{taskId}?pg={(int)productGroup}"));
+            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/api/v3/true-api/dispenser/tasks/{taskId}?pg={(int)productGroup}"));
 
             return await InvokeAsync<DispenserTaskStatusModel>(settings, uri, HttpMethod.Get).ConfigureAwait(false);
         }
@@ -460,7 +461,7 @@ namespace Spoleto.TrueApi
         /// <returns>Файл в формате CSV со сведениями о КИ, которые находятся на балансе у участника оборота товаров.</returns>
         public async Task<string> GetCisListByFilterAsync(TrueApiProviderOption settings, string taskId, ProductGroup productGroup)
         {
-            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/dispenser/results/{taskId}/file?pg={(int)productGroup}/file"));
+            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/api/v3/true-api/dispenser/results/{taskId}/file?pg={(int)productGroup}/file"));
 
             return await InvokeAsync<string>(settings, uri, HttpMethod.Get, isZipResponse: true).ConfigureAwait(false);
         }
@@ -473,7 +474,7 @@ namespace Spoleto.TrueApi
         /// <returns>Квитанция по результатам обработки документов ЭДО содержит перечень из первых 10 ошибок по документу.</returns>
         public async Task<ProcessingResultModel> GetProcessingResultAsync(TrueApiProviderOption settings, string fileId)
         {
-            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/documents/edo/tpr/ud?fileId={fileId}"));
+            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/api/v3/true-api/documents/edo/tpr/ud?fileId={fileId}"));
 
             return await InvokeAsync<ProcessingResultModel>(settings, uri, HttpMethod.Get).ConfigureAwait(false);
         }

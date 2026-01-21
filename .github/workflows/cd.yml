@@ -26,6 +26,9 @@ jobs:
       - name: Pack Spoleto.TrueApi
         run: dotnet pack --include-symbols -p:SymbolPackageFormat=snupkg --no-build -c Release src/Spoleto.TrueApi/Spoleto.TrueApi.csproj -o .
 
+      - name: Pack Spoleto.TrueApi.Auth
+        run: dotnet pack --include-symbols -p:SymbolPackageFormat=snupkg --no-build -c Release src/Spoleto.TrueApi.Auth/Spoleto.TrueApi.Auth.csproj -o .
+
         # Push packages to Nuget
       - name: Push packages
         run: dotnet nuget push *.nupkg --api-key ${{secrets.NUGET_API_KEY}} --source https://api.nuget.org/v3/index.json --skip-duplicate
