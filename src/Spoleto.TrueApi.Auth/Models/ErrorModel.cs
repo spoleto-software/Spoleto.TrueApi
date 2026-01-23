@@ -5,7 +5,7 @@ namespace Spoleto.TrueApi.Auth.Models
     /// <summary>
     /// Ответ сервиса с ошибкой.
     /// </summary>
-    public class ErrorModel
+    public record ErrorModel
     {
         /// <summary>
         /// Код ошибки

@@ -13,7 +13,7 @@ namespace Spoleto.TrueApi.Auth.Providers
         private readonly HttpClient _httpClient;
         private readonly bool _disposeHttpClient;
 
-        private TokenModel? _token;
+        private UnitedTokenModel? _token;
 
         public TrueApiTokenProvider() : this(new HttpClient(), true)
         {
@@ -48,7 +48,7 @@ namespace Spoleto.TrueApi.Auth.Providers
         }
         #endregion
 
-        public async Task<TokenModel> GetTokenAsync(TrueApiTokenProviderOption settings)
+        public async Task<UnitedTokenModel> GetTokenAsync(TrueApiTokenProviderOption settings)
         {
             if (_token != null)
             {
@@ -57,18 +57,32 @@ namespace Spoleto.TrueApi.Auth.Providers
 
             var client = _httpClient;
 
-            var authKey = await GetAuthKey(client, settings).ConfigureAwait(false);
+            string data;
+            if (settings.Inn == null)
+            {
+                var authKey = await GetAuthKey(client, settings).ConfigureAwait(false);
+                data = authKey.Data;
+            }
+            else
+            {
+                data = settings.Inn;
+            }
+
+            data = Convert.ToBase64String(DefaultSettings.Encoding.GetBytes(data));
+            var requestModel = new TokenRequest
+            {
+                Data = CryptographyHelper.SignBase64Data(data, thumbprint: settings.CertificateThumbprint),
+                UnitedToken = true
+            };
+
+            var requestModelJson = JsonHelper.ToJson(requestModel);
 
             var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, "/api/v3/true-api/auth/simpleSignIn"));
             using (var requestMessage = new HttpRequestMessage(HttpMethod.Post, uri))
             {
                 requestMessage.ConfigureRequestMessage();
 
-                var data = Convert.ToBase64String(DefaultSettings.Encoding.GetBytes(authKey.Data));
-                authKey.Data = CryptographyHelper.SignBase64Data(data, thumbprint: settings.CertificateThumbprint);
-
-                var authKeyJson = JsonHelper.ToJson(authKey);
-                requestMessage.Content = new StringContent(authKeyJson, DefaultSettings.Encoding, DefaultSettings.ContentType);
+                requestMessage.Content = new StringContent(requestModelJson, DefaultSettings.Encoding, DefaultSettings.ContentType);
                 using (var responseMessage = await client.SendAsync(requestMessage).ConfigureAwait(false))
                 {
                     var result = await responseMessage.Content.ReadAsStringAsync().ConfigureAwait(false);
@@ -76,7 +90,7 @@ namespace Spoleto.TrueApi.Auth.Providers
                     {
                         try
                         {
-                            _token = JsonHelper.FromJson<TokenModel>(result);
+                            _token = JsonHelper.FromJson<UnitedTokenModel>(result);
                         }
                         catch (Exception e)
                         {

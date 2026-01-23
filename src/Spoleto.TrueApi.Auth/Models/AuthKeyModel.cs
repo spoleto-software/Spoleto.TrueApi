@@ -5,7 +5,7 @@ namespace Spoleto.TrueApi.Auth.Models
     /// <summary>
     ///  Пакет успешного ответа на запрос получения предварительного ключа перед запросом токена
     /// </summary>
-    public class AuthKeyModel
+    public record AuthKeyModel
     {
         /// <summary>
         /// Уникальный идентификатор сгенерированных случайных данных.

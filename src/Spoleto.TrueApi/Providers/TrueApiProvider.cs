@@ -87,10 +87,10 @@ namespace Spoleto.TrueApi
             requestMessage.ConfigureRequestMessage();
 
             var token = await GetTokenAsync(settings).ConfigureAwait(false);
-            requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
+            requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.UuidToken);
         }
 
-        private Task<TokenModel> GetTokenAsync(TrueApiProviderOption settings) => _tokenProvider.GetTokenAsync(new(settings.ServiceUrl, settings.CertificateThumbprint));
+        private Task<UnitedTokenModel> GetTokenAsync(TrueApiProviderOption settings) => _tokenProvider.GetTokenAsync(new(settings.ServiceUrl, settings.CertificateThumbprint, settings.Inn));
 
         private async Task<T> InvokeAsync<T>(TrueApiProviderOption settings, Uri uri, HttpMethod method, string requestJsonContent = null,
             bool isZipResponse = false)

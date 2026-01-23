@@ -7,5 +7,7 @@
         public string FileId { get; set; }
 
         public string ServiceUrl { get; set; }
+
+        public string Inn { get; set; }
     }
 }

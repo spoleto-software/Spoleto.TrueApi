@@ -16,7 +16,8 @@ namespace Spoleto.TrueApi.Tests
             var settings = new TrueApiProviderOption
             {
                 CertificateThumbprint = cert.Certificate.Thumbprint,
-                ServiceUrl = _testOption.ServiceUrl
+                ServiceUrl = _testOption.ServiceUrl,
+                Inn = _testOption.Inn
             };
 
             var trueApiProvider = new TrueApiProvider();
