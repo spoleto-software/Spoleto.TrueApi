@@ -57,21 +57,14 @@ namespace Spoleto.TrueApi.Auth.Providers
 
             var client = _httpClient;
 
-            string data;
-            if (settings.Inn == null)
-            {
-                var authKey = await GetAuthKey(client, settings).ConfigureAwait(false);
-                data = authKey.Data;
-            }
-            else
-            {
-                data = settings.Inn;
-            }
+            var authKey = await GetAuthKey(client, settings).ConfigureAwait(false);
 
-            data = Convert.ToBase64String(DefaultSettings.Encoding.GetBytes(data));
+            var data = Convert.ToBase64String(DefaultSettings.Encoding.GetBytes(authKey.Data));
             var requestModel = new TokenRequest
             {
+                Uuid = authKey.Uuid,
                 Data = CryptographyHelper.SignBase64Data(data, thumbprint: settings.CertificateThumbprint),
+                Inn = settings.Inn,
                 UnitedToken = true
             };
 
