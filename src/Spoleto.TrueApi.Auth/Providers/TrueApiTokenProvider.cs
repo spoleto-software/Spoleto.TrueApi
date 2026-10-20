@@ -65,7 +65,7 @@ namespace Spoleto.TrueApi.Auth.Providers
                 Uuid = authKey.Uuid,
                 Data = CryptographyHelper.SignBase64Data(data, thumbprint: settings.CertificateThumbprint),
                 Inn = settings.Inn,
-                UnitedToken = true
+                UnitedToken = settings.UnitedToken
             };
 
             var requestModelJson = JsonHelper.ToJson(requestModel);
