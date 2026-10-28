@@ -37,6 +37,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\Spoleto.TrueApi\Spoleto.TrueApi.csproj" />
+        <ProjectReference Include="..\Spoleto.TrueApi.Edo\Spoleto.TrueApi.Edo.csproj" />
     </ItemGroup>
 
     <ItemGroup>
