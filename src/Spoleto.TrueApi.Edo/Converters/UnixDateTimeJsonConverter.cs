@@ -31,7 +31,7 @@ namespace Spoleto.TrueApi.Edo.Converters
             }
             else
             {
-                writer.WriteNumberValue(new DateTimeOffset(value.Value).ToUnixTimeSeconds());
+                writer.WriteNumberValue(new DateTimeOffset(DateTime.SpecifyKind(value.Value, DateTimeKind.Utc)).ToUnixTimeSeconds());
             }
         }
     }

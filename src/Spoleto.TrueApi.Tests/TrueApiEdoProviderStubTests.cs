@@ -101,7 +101,7 @@ namespace Spoleto.TrueApi.Tests
             {
                 Limit = 10,
                 Offset = 20,
-                CreatedFrom = DateTimeOffset.FromUnixTimeSeconds(1582059600).LocalDateTime,
+                CreatedFrom = DateTimeOffset.FromUnixTimeSeconds(1582059600).UtcDateTime,
                 PartnerInn = "0000000000",
                 Status = EdoDocumentStatus.DeliveredSignatureRequired,
                 Type = EdoDocumentType.UPD970WithSCHFDOPInvoiceWaybill,
@@ -128,7 +128,7 @@ namespace Spoleto.TrueApi.Tests
                 Assert.That(group.Status, Is.EqualTo(EdoDocumentStatus.Sent));
                 Assert.That(group.Type, Is.EqualTo(EdoDocumentType.UPDWithSCHFDOPInvoiceWaybill));
                 Assert.That(group.TotalPrice, Is.EqualTo(1930500m));
-                Assert.That(group.CreatedAt, Is.EqualTo(DateTimeOffset.FromUnixTimeSeconds(1582097164).LocalDateTime));
+                Assert.That(group.CreatedAt, Is.EqualTo(DateTimeOffset.FromUnixTimeSeconds(1582097164).UtcDateTime));
                 Assert.That(group.Recipient!.Id, Is.EqualTo(999999999));
                 Assert.That(group.Recipient.Inn, Is.EqualTo("0000000000"));
 
