@@ -66,6 +66,15 @@ namespace Spoleto.TrueApi.Tests
                 "УПД и УПДи");
 
         /// <summary>
+        /// Подписать можно только УПД и УПДи формата 970: подписание УПД версии 5.01 сервис отклоняет с 31.03.2025.
+        /// </summary>
+        private static string FindUpd970DocumentId(EdoDocumentCollection list, string direction)
+            => FindDocumentId(list, direction,
+                x => x is >= EdoDocumentType.UPD970WithDOPWaybill and <= EdoDocumentType.UPD970WithSCHFDOPBuyerTitleInvoiceWaybill
+                    or >= EdoDocumentType.UPDi970WithDOPWaybillCorrected and <= EdoDocumentType.UPDi970WithSCHFDOPBuyerTitleInvoiceCorrectedWaybill,
+                "УПД и УПДи формата 970");
+
+        /// <summary>
         /// Кодировку берём из заголовка XML (у УПД windows-1251), а не угадываем: так читаются и УПД, и квитанции.
         /// Корень всех форматов ФНС - «Файл», поэтому кириллица в нём проверяет, что байты пришли без порчи.
         /// </summary>
@@ -243,7 +252,7 @@ namespace Spoleto.TrueApi.Tests
         }
 
         /// <summary>
-        /// Подписывает первый черновик исходящего документа сертификатом из настроек, и тот уходит получателю.
+        /// Подписывает самый новый черновик исходящего УПД / УПДи формата 970 сертификатом из настроек, и тот уходит получателю.
         /// </summary>
         [Test]
         [Explicit("Отправляет черновик получателю: на стенде одним черновиком становится меньше.")]
@@ -253,9 +262,10 @@ namespace Spoleto.TrueApi.Tests
             var settings = CreateSettings();
             using var edoProvider = new TrueApiEdoProvider();
 
-            var draftSearchModel = new EdoDocumentSearchModel { Limit = 50, Status = EdoDocumentStatus.Draft };
+            // Новые черновики первыми: старые на стенде могут быть в версии 5.01.
+            var draftSearchModel = new EdoDocumentSearchModel { Limit = 50, Status = EdoDocumentStatus.Draft, SortBy = EdoDocumentSortField.CreatedAt };
             var drafts = await edoProvider.GetOutgoingDocumentListAsync(settings, draftSearchModel);
-            var documentId = FindUniversalDocumentId(drafts, "черновиков исходящих");
+            var documentId = FindUpd970DocumentId(drafts, "черновиков исходящих");
 
             // Act
             await edoProvider.SignOutgoingDocumentAsync(settings, documentId);
