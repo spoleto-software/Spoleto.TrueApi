@@ -1,4 +1,5 @@
-﻿using System.Net;
+﻿using System.IO.Compression;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Xml.Linq;
@@ -75,6 +76,21 @@ namespace Spoleto.TrueApi.Tests
             }
             """;
 
+        private const string DocumentId = "220262cf-0fe7-4d3f-996a-038181ba7812";
+
+        private const string SellerFileName = "ON_NSCHFDOPPR_2BM-0000000000-000000000_2BM-7777777777-777777777_20260402_" + DocumentId;
+
+        // Архив УПД: информация продавца, информация покупателя и квитанция, у каждого файла подпись.
+        private static readonly string[] DocumentArchiveEntries =
+        [
+            SellerFileName + ".xml",
+            SellerFileName + ".p7s",
+            "ON_NSCHFDOPPOK_2BM-7777777777-777777777_2BM-0000000000-000000000_20260403_" + DocumentId + ".xml",
+            "ON_NSCHFDOPPOK_2BM-7777777777-777777777_2BM-0000000000-000000000_20260403_" + DocumentId + ".p7s",
+            "DP_IZVPOL_2BM-7777777777-777777777_2BM-0000000000-000000000_20260402_" + DocumentId + ".xml",
+            "DP_IZVPOL_2BM-7777777777-777777777_2BM-0000000000-000000000_20260402_" + DocumentId + ".p7s"
+        ];
+
         static TrueApiEdoProviderStubTests()
         {
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);//support for "windows-1251"
@@ -90,6 +106,65 @@ namespace Spoleto.TrueApi.Tests
         private static HttpResponseMessage CreateResponse(HttpStatusCode statusCode, string content, string mediaType)
             => new(statusCode) { Content = new StringContent(content, Encoding.UTF8, mediaType) };
 
+        /// <summary>
+        /// Файл .xml в архиве - XML в windows-1251 с ИдФайл по своему имени, остальные файлы - байты своего имени. Так по содержимому видно, какой файл вернулся.
+        /// </summary>
+        private static HttpResponseMessage CreateArchiveResponse(string? archiveFileName, params string[] entryNames)
+            => CreateArchiveResponse(archiveFileName, entryNames.ToDictionary(x => x, CreateEntryContent));
+
+        private static byte[] CreateEntryContent(string entryName)
+            => entryName.EndsWith(".xml", StringComparison.Ordinal)
+                ? Encoding.GetEncoding("windows-1251").GetBytes(CreateEntryXml(Path.GetFileNameWithoutExtension(entryName)))
+                : Encoding.UTF8.GetBytes(entryName);
+
+        private static string CreateEntryXml(string fileName) => $"""<?xml version="1.0" encoding="windows-1251"?><Файл ИдФайл="{fileName}"/>""";
+
+        private static HttpResponseMessage CreateArchiveResponse(string? archiveFileName, IReadOnlyDictionary<string, byte[]> entries)
+        {
+            using var archiveStream = new MemoryStream();
+            using (var archive = new ZipArchive(archiveStream, ZipArchiveMode.Create, true))
+            {
+                foreach (var (entryName, content) in entries)
+                {
+                    using var entryStream = archive.CreateEntry(entryName).Open();
+                    entryStream.Write(content);
+                }
+            }
+
+            var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(archiveStream.ToArray()) };
+            response.Content.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
+            if (archiveFileName != null)
+            {
+                response.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment") { FileName = $"\"{archiveFileName}\"" };
+            }
+
+            return response;
+        }
+
+        /// <summary>
+        /// Информация продавца УПД формата 970: только элементы и атрибуты, которые повторяет информация покупателя.
+        /// </summary>
+        private static string CreateSellerXml(string? correctionNumber)
+        {
+            var correction = correctionNumber == null ? "" : $"""<ИспрДок НомИспр="{correctionNumber}" ДатаИспр="03.04.2026"/>""";
+
+            return $"""
+                <?xml version="1.0" encoding="windows-1251"?>
+                <Файл ИдФайл="{SellerFileName}" ВерсФорм="5.03" ВерсПрог="Spoleto">
+                  <Документ КНД="1115131" Функция="СЧФДОП" НаимДокОпр="Счет-фактура и документ об отгрузке товаров (выполнении работ), передаче имущественных прав (документ об оказании услуг)" ДатаИнфПр="02.04.2026" ВремИнфПр="10.15.00" УИД="0000000000-7777777777-000001">
+                    <СвСчФакт НомерДок="15" ДатаДок="01.04.2026" КодОКВ="643">{correction}</СвСчФакт>
+                  </Документ>
+                </Файл>
+                """;
+        }
+
+        private static HttpResponseMessage CreateSellerArchiveResponse(string sellerXml, byte[] signature)
+            => CreateArchiveResponse(SellerFileName + ".zip", new Dictionary<string, byte[]>
+            {
+                [SellerFileName + ".xml"] = Encoding.GetEncoding("windows-1251").GetBytes(sellerXml),
+                [SellerFileName + ".p7s"] = signature
+            });
+
         [Test]
         public async Task GetIncomingDocumentList_BuildsQueryAndParsesResponse()
         {
@@ -101,7 +176,7 @@ namespace Spoleto.TrueApi.Tests
             {
                 Limit = 10,
                 Offset = 20,
-                CreatedFrom = DateTimeOffset.FromUnixTimeSeconds(1582059600).LocalDateTime,
+                CreatedFrom = DateTimeOffset.FromUnixTimeSeconds(1582059600).UtcDateTime,
                 PartnerInn = "0000000000",
                 Status = EdoDocumentStatus.DeliveredSignatureRequired,
                 Type = EdoDocumentType.UPD970WithSCHFDOPInvoiceWaybill,
@@ -128,7 +203,7 @@ namespace Spoleto.TrueApi.Tests
                 Assert.That(group.Status, Is.EqualTo(EdoDocumentStatus.Sent));
                 Assert.That(group.Type, Is.EqualTo(EdoDocumentType.UPDWithSCHFDOPInvoiceWaybill));
                 Assert.That(group.TotalPrice, Is.EqualTo(1930500m));
-                Assert.That(group.CreatedAt, Is.EqualTo(DateTimeOffset.FromUnixTimeSeconds(1582097164).LocalDateTime));
+                Assert.That(group.CreatedAt, Is.EqualTo(DateTimeOffset.FromUnixTimeSeconds(1582097164).UtcDateTime));
                 Assert.That(group.Recipient!.Id, Is.EqualTo(999999999));
                 Assert.That(group.Recipient.Inn, Is.EqualTo("0000000000"));
 
@@ -184,6 +259,156 @@ namespace Spoleto.TrueApi.Tests
                 Assert.That(content, Is.EqualTo(xml));
                 Assert.That(XDocument.Load(new MemoryStream(content)).Root!.Attribute("ИдФайл")!.Value, Is.EqualTo("ON_NSCHFDOPPR"));
             });
+        }
+
+        [TestCase(false, "incoming-documents")]
+        [TestCase(true, "outgoing-documents")]
+        public async Task GetSignedDocumentInfo_ReadsFileNamedAfterArchive(bool isOutgoing, string documentsPath)
+        {
+            // Arrange
+            var handler = new StubHttpMessageHandler(CreateArchiveResponse(SellerFileName + ".zip", DocumentArchiveEntries));
+            using var edoProvider = new TrueApiEdoProvider(new HttpClient(handler), true, new FakeTokenProvider());
+
+            // Act
+            var document = isOutgoing
+                ? await edoProvider.GetOutgoingSignedDocumentInfoAsync(CreateSettings(), DocumentId)
+                : await edoProvider.GetIncomingSignedDocumentInfoAsync(CreateSettings(), DocumentId);
+
+            // Assert
+            var request = handler.Requests.Single();
+            Assert.Multiple(() =>
+            {
+                Assert.That(request.Uri.ToString(), Is.EqualTo(ServiceUrl + "/api/v3/true-api/elk/" + documentsPath + "/" + DocumentId));
+                Assert.That(request.Accept, Is.EqualTo("*/*"));
+                Assert.That(document.FileName, Is.EqualTo(SellerFileName));
+                Assert.That(document.Content, Is.EqualTo(CreateEntryXml(SellerFileName)));
+                Assert.That(document.RawContent, Is.EqualTo(CreateEntryContent(SellerFileName + ".xml")));
+                Assert.That(Encoding.UTF8.GetString(document.Signature), Is.EqualTo(SellerFileName + ".p7s"));
+            });
+        }
+
+        [TestCase(null)]
+        [TestCase(DocumentId + ".zip")]
+        public async Task GetSignedDocumentInfo_ArchiveNotNamedAfterDocument_ReadsSellerFile(string? archiveFileName)
+        {
+            // Arrange
+            var handler = new StubHttpMessageHandler(CreateArchiveResponse(archiveFileName, DocumentArchiveEntries));
+            using var edoProvider = new TrueApiEdoProvider(new HttpClient(handler), true, new FakeTokenProvider());
+
+            // Act
+            var document = await edoProvider.GetIncomingSignedDocumentInfoAsync(CreateSettings(), DocumentId);
+
+            // Assert
+            Assert.Multiple(() =>
+            {
+                Assert.That(document.FileName, Is.EqualTo(SellerFileName));
+                Assert.That(document.Content, Is.EqualTo(CreateEntryXml(SellerFileName)));
+                Assert.That(document.RawContent, Is.EqualTo(CreateEntryContent(SellerFileName + ".xml")));
+                Assert.That(Encoding.UTF8.GetString(document.Signature), Is.EqualTo(SellerFileName + ".p7s"));
+            });
+        }
+
+        [TestCase("windows-1251", false)]
+        [TestCase("utf-8", false)]
+        [TestCase("utf-8", true)]
+        public async Task GetSignedDocumentInfo_DecodesXmlByDeclaredEncoding(string encodingName, bool withBom)
+        {
+            // Arrange
+            var encoding = Encoding.GetEncoding(encodingName);
+            var xml = $"""<?xml version="1.0" encoding="{encodingName}"?><Файл ИдФайл="{SellerFileName}"/>""";
+            byte[] rawContent = withBom ? [.. encoding.GetPreamble(), .. encoding.GetBytes(xml)] : encoding.GetBytes(xml);
+            var handler = new StubHttpMessageHandler(CreateArchiveResponse(SellerFileName + ".zip", new Dictionary<string, byte[]>
+            {
+                [SellerFileName + ".xml"] = rawContent,
+                [SellerFileName + ".p7s"] = [0x30]
+            }));
+            using var edoProvider = new TrueApiEdoProvider(new HttpClient(handler), true, new FakeTokenProvider());
+
+            // Act
+            var document = await edoProvider.GetIncomingSignedDocumentInfoAsync(CreateSettings(), DocumentId);
+
+            // Assert
+            Assert.Multiple(() =>
+            {
+                Assert.That(document.Content, Is.EqualTo(xml));
+                Assert.That(document.RawContent, Is.EqualTo(rawContent));
+            });
+        }
+
+        [Test]
+        public void GetSignedDocumentInfo_WithoutSellerFile_ThrowsWithArchiveContents()
+        {
+            // Arrange
+            var handler = new StubHttpMessageHandler(CreateArchiveResponse(null, DocumentArchiveEntries.Skip(2).ToArray()));
+            using var edoProvider = new TrueApiEdoProvider(new HttpClient(handler), true, new FakeTokenProvider());
+
+            // Act
+            var ex = Assert.ThrowsAsync<InvalidDataException>(() => edoProvider.GetIncomingSignedDocumentInfoAsync(CreateSettings(), DocumentId));
+
+            // Assert
+            Assert.That(ex!.Message, Does.Contain(DocumentArchiveEntries[2]));
+        }
+
+        [Test]
+        public void GetSignedDocumentInfo_WithoutSignature_Throws()
+        {
+            // Arrange
+            var handler = new StubHttpMessageHandler(CreateArchiveResponse(SellerFileName + ".zip", SellerFileName + ".xml"));
+            using var edoProvider = new TrueApiEdoProvider(new HttpClient(handler), true, new FakeTokenProvider());
+
+            // Act
+            var ex = Assert.ThrowsAsync<InvalidDataException>(() => edoProvider.GetOutgoingSignedDocumentInfoAsync(CreateSettings(), DocumentId));
+
+            // Assert
+            Assert.That(ex!.Message, Does.Contain(SellerFileName + ".p7s"));
+        }
+
+        [TestCase(false, "incoming-documents", null, false)]
+        [TestCase(true, "outgoing-documents", "1", true)]
+        public async Task GetSellerDocumentInfo_ParsesSellerFile(bool isOutgoing, string documentsPath, string? correctionNumber, bool isUPDi)
+        {
+            // Arrange
+            var signature = new byte[] { 0x30, 0x82, 0x01, 0x00 };
+            var handler = new StubHttpMessageHandler(CreateSellerArchiveResponse(CreateSellerXml(correctionNumber), signature));
+            using var edoProvider = new TrueApiEdoProvider(new HttpClient(handler), true, new FakeTokenProvider());
+
+            // Act
+            var info = isOutgoing
+                ? await edoProvider.GetOutgoingSellerDocumentInfoAsync(CreateSettings(), DocumentId)
+                : await edoProvider.GetIncomingSellerDocumentInfoAsync(CreateSettings(), DocumentId);
+
+            // Assert
+            Assert.Multiple(() =>
+            {
+                Assert.That(handler.Requests.Single().Uri.ToString(), Is.EqualTo(ServiceUrl + "/api/v3/true-api/elk/" + documentsPath + "/" + DocumentId));
+                Assert.That(info.FileId, Is.EqualTo(SellerFileName));
+                Assert.That(info.DateCreation, Is.EqualTo("02.04.2026"));
+                Assert.That(info.TimeCreation, Is.EqualTo("10.15.00"));
+                Assert.That(info.DocumentName, Does.StartWith("Счет-фактура и документ об отгрузке"));
+                Assert.That(info.Function, Is.EqualTo(EdoDocumentFunction.InvoiceAndPrimaryDocument));
+                Assert.That(info.DocumentNumber, Is.EqualTo("15"));
+                Assert.That(info.DocumentDate, Is.EqualTo("01.04.2026"));
+                Assert.That(info.DocumentUid, Is.EqualTo("0000000000-7777777777-000001"));
+                Assert.That(info.IsUPDi, Is.EqualTo(isUPDi));
+                Assert.That(info.Signature, Is.EqualTo(signature));
+            });
+        }
+
+        [TestCase("Функция=\"СЧФДОП\"", "Функция=\"КСЧФ\"", "КСЧФ")]
+        [TestCase(" ДатаДок=\"01.04.2026\"", "", "ДатаДок")]
+        [TestCase("СвСчФакт", "СвКСчФ", "СвСчФакт")]
+        public void GetSellerDocumentInfo_InvalidSellerFile_ThrowsWithReason(string oldValue, string newValue, string expectedReason)
+        {
+            // Arrange
+            var sellerXml = CreateSellerXml(null).Replace(oldValue, newValue);
+            var handler = new StubHttpMessageHandler(CreateSellerArchiveResponse(sellerXml, [0x30]));
+            using var edoProvider = new TrueApiEdoProvider(new HttpClient(handler), true, new FakeTokenProvider());
+
+            // Act
+            var ex = Assert.ThrowsAsync<InvalidDataException>(() => edoProvider.GetIncomingSellerDocumentInfoAsync(CreateSettings(), DocumentId));
+
+            // Assert
+            Assert.That(ex!.Message, Does.Contain(expectedReason).And.Contain(SellerFileName));
         }
 
         [Test]

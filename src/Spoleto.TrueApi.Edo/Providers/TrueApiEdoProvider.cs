@@ -1,4 +1,5 @@
-﻿using System.Net;
+﻿using System.IO.Compression;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using Spoleto.Common;
@@ -180,6 +181,30 @@ namespace Spoleto.TrueApi.Edo.Providers
             return await InvokeFileAsync(settings, HttpMethod.Get, uri).ConfigureAwait(false);
         }
 
+        private async Task<EdoSignedDocumentInfo> GetSignedDocumentInfoAsync(TrueApiEdoProviderOption settings, string documentsPath, string documentId)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(documentId);
+
+            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"{documentsPath}/{Uri.EscapeDataString(documentId)}"));
+
+            using var responseMessage = await SendAsync(settings, HttpMethod.Get, uri, isFileResponse: true).ConfigureAwait(false);
+
+            var contentDisposition = responseMessage.Content.Headers.ContentDisposition;
+            var archiveFileName = contentDisposition?.FileNameStar ?? contentDisposition?.FileName?.Trim('"');
+
+            var archiveBytes = await responseMessage.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+            using var archive = new ZipArchive(new MemoryStream(archiveBytes), ZipArchiveMode.Read);
+
+            return EdoArchiveHelper.ReadSignedDocument(archive, archiveFileName);
+        }
+
+        private async Task<EdoSellerDocumentInfo> GetSellerDocumentInfoAsync(TrueApiEdoProviderOption settings, string documentsPath, string documentId)
+        {
+            var document = await GetSignedDocumentInfoAsync(settings, documentsPath, documentId).ConfigureAwait(false);
+
+            return EdoSellerDocumentHelper.ReadSellerDocumentInfo(document);
+        }
+
         /// <inheritdoc />
         public Task<EdoDocumentCollection> GetIncomingDocumentListAsync(TrueApiEdoProviderOption settings, EdoDocumentSearchModel? searchModel = null)
             => GetDocumentListAsync(settings, IncomingDocumentsPath, searchModel);
@@ -195,5 +220,21 @@ namespace Spoleto.TrueApi.Edo.Providers
         /// <inheritdoc />
         public Task<byte[]> GetOutgoingDocumentAsync(TrueApiEdoProviderOption settings, string documentId)
             => GetDocumentAsync(settings, OutgoingDocumentsPath, documentId);
+
+        /// <inheritdoc />
+        public Task<EdoSignedDocumentInfo> GetIncomingSignedDocumentInfoAsync(TrueApiEdoProviderOption settings, string documentId)
+            => GetSignedDocumentInfoAsync(settings, IncomingDocumentsPath, documentId);
+
+        /// <inheritdoc />
+        public Task<EdoSignedDocumentInfo> GetOutgoingSignedDocumentInfoAsync(TrueApiEdoProviderOption settings, string documentId)
+            => GetSignedDocumentInfoAsync(settings, OutgoingDocumentsPath, documentId);
+
+        /// <inheritdoc />
+        public Task<EdoSellerDocumentInfo> GetIncomingSellerDocumentInfoAsync(TrueApiEdoProviderOption settings, string documentId)
+            => GetSellerDocumentInfoAsync(settings, IncomingDocumentsPath, documentId);
+
+        /// <inheritdoc />
+        public Task<EdoSellerDocumentInfo> GetOutgoingSellerDocumentInfoAsync(TrueApiEdoProviderOption settings, string documentId)
+            => GetSellerDocumentInfoAsync(settings, OutgoingDocumentsPath, documentId);
     }
 }

@@ -72,4 +72,15 @@ var xml = XDocument.Load(new MemoryStream(file));
 // Исходящие документы - те же методы с Outgoing:
 var outgoingList = await edoProvider.GetOutgoingDocumentListAsync(settings, new EdoDocumentSearchModel { Limit = 10 });
 var outgoingFile = await edoProvider.GetOutgoingDocumentAsync(settings, outgoingList.Items[0].Documents[0].Id);
+
+// Файл документа с открепленной подписью из ZIP-архива документа (архив есть только у УПД, УПДи, УКД и УКДи):
+var signed = await edoProvider.GetIncomingSignedDocumentInfoAsync(settings, list.Items[0].Documents[0].Id);
+var xml = signed.Content; // XML строкой, кодировку из заголовка библиотека учла сама; FileName - ИдФайл
+var signature = Convert.ToBase64String(signed.Signature); // RawContent и Signature - файлы .xml и .p7s как есть, подпись сделана по RawContent
+var outgoingSigned = await edoProvider.GetOutgoingSignedDocumentInfoAsync(settings, outgoingList.Items[0].Documents[0].Id);
+
+// Сведения из файла информации продавца УПД / УПДи (формат 970), которые повторяет информация покупателя:
+var sellerInfo = await edoProvider.GetIncomingSellerDocumentInfoAsync(settings, list.Items[0].Documents[0].Id);
+var sellerFileId = sellerInfo.FileId; // ИдФайл, например, для запроса квитанций результата обработки
+var outgoingSellerInfo = await edoProvider.GetOutgoingSellerDocumentInfoAsync(settings, outgoingList.Items[0].Documents[0].Id);
 ```
