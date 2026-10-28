@@ -80,6 +80,9 @@ namespace Spoleto.TrueApi.Tests
 
         private const string SellerFileName = "ON_NSCHFDOPPR_2BM-0000000000-000000000_2BM-7777777777-777777777_20260402_" + DocumentId;
 
+        // Начало подписи CMS в Base64 с переносом строки, как её возвращает КриптоПро.
+        private const string SignatureBase64 = "MIIPkQYJKoZIhvcNAQcCoIIPgjCCD34CAQExDjAMBggqhQMHAQECAwUAMAsGCSqG\r\nSIb3DQEHAaCCCRUwggkRMIIIvqADAgECAhEBr1uLAFartopGqtxJllj2fjAKBggq";
+
         // Архив УПД: информация продавца, информация покупателя и квитанция, у каждого файла подпись.
         private static readonly string[] DocumentArchiveEntries =
         [
@@ -164,6 +167,17 @@ namespace Spoleto.TrueApi.Tests
                 [SellerFileName + ".xml"] = Encoding.GetEncoding("windows-1251").GetBytes(sellerXml),
                 [SellerFileName + ".p7s"] = signature
             });
+
+        /// <summary>
+        /// Файл черновика как есть. В тестах подписания - XML в windows-1251 с кириллицей: перекодирование изменило бы его байты.
+        /// </summary>
+        private static HttpResponseMessage CreateDraftFileResponse(byte[] content)
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(content) };
+            response.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+
+            return response;
+        }
 
         [Test]
         public async Task GetIncomingDocumentList_BuildsQueryAndParsesResponse()
@@ -412,6 +426,82 @@ namespace Spoleto.TrueApi.Tests
         }
 
         [Test]
+        public async Task SignOutgoingDocument_SignsFileBytesAndPostsSignature()
+        {
+            // Arrange
+            var content = Encoding.GetEncoding("windows-1251").GetBytes(CreateSellerXml(null));
+            var handler = new StubHttpMessageHandler(CreateDraftFileResponse(content), new HttpResponseMessage(HttpStatusCode.OK));
+            using var edoProvider = new FakeSigningEdoProvider(new HttpClient(handler), new FakeTokenProvider(), SignatureBase64);
+
+            // Act
+            await edoProvider.SignOutgoingDocumentAsync(CreateSettings(), DocumentId);
+
+            // Assert
+            Assert.That(handler.Requests, Has.Count.EqualTo(2));
+            var fileRequest = handler.Requests[0];
+            var signatureRequest = handler.Requests[1];
+            Assert.Multiple(() =>
+            {
+                Assert.That(fileRequest.Method, Is.EqualTo(HttpMethod.Get));
+                Assert.That(fileRequest.Uri.ToString(), Is.EqualTo(ServiceUrl + "/api/v3/true-api/elk/outgoing-documents/" + DocumentId + "/content"));
+                Assert.That(edoProvider.SignedContents.Single(), Is.EqualTo(content));
+                Assert.That(edoProvider.Thumbprint, Is.EqualTo("thumbprint"));
+
+                Assert.That(signatureRequest.Method, Is.EqualTo(HttpMethod.Post));
+                Assert.That(signatureRequest.Uri.ToString(), Is.EqualTo(ServiceUrl + "/api/v3/true-api/edo/outgoing-documents/" + DocumentId + "/signature"));
+                Assert.That(signatureRequest.ContentType, Is.EqualTo("text/plain"));
+                Assert.That(signatureRequest.ContentEncoding, Is.EqualTo("base64"));
+                Assert.That(signatureRequest.Body, Is.EqualTo(SignatureBase64));
+            });
+        }
+
+        [Test]
+        public async Task SignOutgoingDocument_Unauthorized_ResendsSameSignature()
+        {
+            // Arrange
+            var handler = new StubHttpMessageHandler(
+                CreateDraftFileResponse(Encoding.GetEncoding("windows-1251").GetBytes(CreateSellerXml(null))),
+                CreateResponse(HttpStatusCode.Unauthorized, """{"error_message":"Токен не действителен. Необходимо получить новый токен аутентификации"}""", "application/json"),
+                new HttpResponseMessage(HttpStatusCode.OK));
+            var tokenProvider = new FakeTokenProvider();
+            using var edoProvider = new FakeSigningEdoProvider(new HttpClient(handler), tokenProvider, SignatureBase64);
+
+            // Act
+            await edoProvider.SignOutgoingDocumentAsync(CreateSettings(), DocumentId);
+
+            // Assert
+            // Подставной провайдер выдаёт новый токен на каждый запрос: uuid-1 ушёл с запросом файла.
+            var signatureRequests = handler.Requests.Skip(1).ToList();
+            Assert.Multiple(() =>
+            {
+                Assert.That(edoProvider.SignedContents, Has.Count.EqualTo(1));
+                Assert.That(tokenProvider.ExpiredCount, Is.EqualTo(1));
+                Assert.That(signatureRequests.Select(x => x.Authorization), Is.EqualTo(new[] { "Bearer uuid-2", "Bearer uuid-3" }));
+                Assert.That(signatureRequests.Select(x => x.Body), Is.EqualTo(new[] { SignatureBase64, SignatureBase64 }));
+                Assert.That(signatureRequests.Select(x => x.ContentEncoding), Is.EqualTo(new[] { "base64", "base64" }));
+            });
+        }
+
+        [Test]
+        public void SignOutgoingDocument_DraftNotFound_DoesNotSign()
+        {
+            // Arrange
+            var handler = new StubHttpMessageHandler(CreateResponse(HttpStatusCode.NotFound, """{"error_message":"Документ не найден в ГИС МТ"}""", "application/json"));
+            using var edoProvider = new FakeSigningEdoProvider(new HttpClient(handler), new FakeTokenProvider(), SignatureBase64);
+
+            // Act
+            var ex = Assert.ThrowsAsync<HttpRequestException>(() => edoProvider.SignOutgoingDocumentAsync(CreateSettings(), DocumentId));
+
+            // Assert
+            Assert.Multiple(() =>
+            {
+                Assert.That(ex!.Message, Is.EqualTo("Документ не найден в ГИС МТ"));
+                Assert.That(edoProvider.SignedContents, Is.Empty);
+                Assert.That(handler.Requests, Has.Count.EqualTo(1));
+            });
+        }
+
+        [Test]
         public async Task Unauthorized_RefreshesTokenOnce()
         {
             // Arrange
@@ -473,7 +563,7 @@ namespace Spoleto.TrueApi.Tests
             Assert.That(ex.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
         }
 
-        private sealed record StubRequest(Uri Uri, string? Authorization, string Accept);
+        private sealed record StubRequest(HttpMethod Method, Uri Uri, string? Authorization, string Accept, string? ContentType, string? ContentEncoding, string? Body);
 
         private sealed class StubHttpMessageHandler : HttpMessageHandler
         {
@@ -486,11 +576,40 @@ namespace Spoleto.TrueApi.Tests
 
             public List<StubRequest> Requests { get; } = [];
 
-            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             {
-                Requests.Add(new StubRequest(request.RequestUri!, request.Headers.Authorization?.ToString(), request.Headers.Accept.ToString()));
+                // Тело читаем здесь: после отправки провайдер освобождает запрос вместе с телом.
+                var body = request.Content == null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
 
-                return Task.FromResult(_responses.Dequeue());
+                Requests.Add(new StubRequest(request.Method, request.RequestUri!, request.Headers.Authorization?.ToString(), request.Headers.Accept.ToString(),
+                    request.Content?.Headers.ContentType?.MediaType, request.Content?.Headers.ContentEncoding.ToString(), body));
+
+                return _responses.Dequeue();
+            }
+        }
+
+        /// <summary>
+        /// Подпись без КриптоПро: запоминает подписанные байты и возвращает заданную подпись.
+        /// </summary>
+        private sealed class FakeSigningEdoProvider : TrueApiEdoProvider
+        {
+            private readonly string _signature;
+
+            public FakeSigningEdoProvider(HttpClient httpClient, ITrueApiTokenProvider tokenProvider, string signature) : base(httpClient, true, tokenProvider)
+            {
+                _signature = signature;
+            }
+
+            public List<byte[]> SignedContents { get; } = [];
+
+            public string? Thumbprint { get; private set; }
+
+            protected override string SignDetached(TrueApiEdoProviderOption settings, byte[] content)
+            {
+                Thumbprint = settings.CertificateThumbprint;
+                SignedContents.Add(content);
+
+                return _signature;
             }
         }
 

@@ -14,7 +14,7 @@
         public required string ServiceUrl { get; set; }
 
         /// <summary>
-        /// Отпечаток сертификата УКЭП, которым подписывается запрос токена.
+        /// Отпечаток сертификата УКЭП, которым подписываются запрос токена и исходящие документы.
         /// </summary>
         public required string CertificateThumbprint { get; set; }
 

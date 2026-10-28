@@ -14,6 +14,7 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <PackageReference Include="Spoleto.CIS.Cryptography" Version="2.7.21.955" />
         <PackageReference Include="Spoleto.Common" Version="3.6.28.1701" />
     </ItemGroup>
 

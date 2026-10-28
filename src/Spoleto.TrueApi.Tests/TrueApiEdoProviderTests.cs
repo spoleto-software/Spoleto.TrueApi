@@ -241,5 +241,28 @@ namespace Spoleto.TrueApi.Tests
             // Assert
             AssertSellerDocumentInfo(info);
         }
+
+        /// <summary>
+        /// Подписывает первый черновик исходящего документа сертификатом из настроек, и тот уходит получателю.
+        /// </summary>
+        [Test]
+        [Explicit("Отправляет черновик получателю: на стенде одним черновиком становится меньше.")]
+        public async Task SignOutgoingDocumentTest()
+        {
+            // Arrange
+            var settings = CreateSettings();
+            using var edoProvider = new TrueApiEdoProvider();
+
+            var draftSearchModel = new EdoDocumentSearchModel { Limit = 50, Status = EdoDocumentStatus.Draft };
+            var drafts = await edoProvider.GetOutgoingDocumentListAsync(settings, draftSearchModel);
+            var documentId = FindUniversalDocumentId(drafts, "черновиков исходящих");
+
+            // Act
+            await edoProvider.SignOutgoingDocumentAsync(settings, documentId);
+
+            // Assert
+            var draftsAfterSigning = await edoProvider.GetOutgoingDocumentListAsync(settings, draftSearchModel);
+            Assert.That(draftsAfterSigning.Items.SelectMany(x => x.Documents).Select(x => x.Id), Does.Not.Contain(documentId));
+        }
     }
 }

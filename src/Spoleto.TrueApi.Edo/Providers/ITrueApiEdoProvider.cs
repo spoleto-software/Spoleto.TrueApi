@@ -171,5 +171,28 @@ namespace Spoleto.TrueApi.Edo.Providers
         /// <param name="documentId">Идентификатор документа в системе ЭДО Оператора.</param>
         /// <returns>Сведения из файла продавца и его подпись.</returns>
         Task<EdoSellerDocumentInfo> GetOutgoingSellerDocumentInfoAsync(TrueApiEdoProviderOption settings, string documentId);
+
+        /// <summary>
+        /// Подписание черновика исходящего документа: УПД, УПДи, УКД или УКДи. После подписания документ уходит получателю.
+        /// </summary>
+        /// <remarks>
+        /// Скачивает файл черновика, как <see cref="GetOutgoingDocumentAsync"/>, подписывает его байты как есть открепленной подписью
+        /// сертификатом <see cref="TrueApiEdoProviderOption.CertificateThumbprint"/> и отправляет подпись.
+        /// </remarks>
+        /// <param name="settings">Настройки провайдера.</param>
+        /// <param name="documentId">Идентификатор черновика в системе ЭДО Оператора, полученный при его загрузке.</param>
+        void SignOutgoingDocument(TrueApiEdoProviderOption settings, string documentId)
+            => SignOutgoingDocumentAsync(settings, documentId).GetAwaiter().GetResult();
+
+        /// <summary>
+        /// Подписание черновика исходящего документа: УПД, УПДи, УКД или УКДи. После подписания документ уходит получателю.
+        /// </summary>
+        /// <remarks>
+        /// Скачивает файл черновика, как <see cref="GetOutgoingDocumentAsync"/>, подписывает его байты как есть открепленной подписью
+        /// сертификатом <see cref="TrueApiEdoProviderOption.CertificateThumbprint"/> и отправляет подпись.
+        /// </remarks>
+        /// <param name="settings">Настройки провайдера.</param>
+        /// <param name="documentId">Идентификатор черновика в системе ЭДО Оператора, полученный при его загрузке.</param>
+        Task SignOutgoingDocumentAsync(TrueApiEdoProviderOption settings, string documentId);
     }
 }

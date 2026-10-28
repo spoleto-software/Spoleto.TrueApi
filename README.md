@@ -83,4 +83,9 @@ var outgoingSigned = await edoProvider.GetOutgoingSignedDocumentInfoAsync(settin
 var sellerInfo = await edoProvider.GetIncomingSellerDocumentInfoAsync(settings, list.Items[0].Documents[0].Id);
 var sellerFileId = sellerInfo.FileId; // ИдФайл, например, для запроса квитанций результата обработки
 var outgoingSellerInfo = await edoProvider.GetOutgoingSellerDocumentInfoAsync(settings, outgoingList.Items[0].Documents[0].Id);
+
+// Подписание черновика исходящего УПД / УПДи / УКД / УКДи сертификатом CertificateThumbprint, после чего документ уходит получателю.
+// Библиотека скачивает файл черновика и подписывает его байты как есть открепленной подписью:
+var drafts = await edoProvider.GetOutgoingDocumentListAsync(settings, new EdoDocumentSearchModel { Status = EdoDocumentStatus.Draft });
+await edoProvider.SignOutgoingDocumentAsync(settings, drafts.Items[0].Documents[0].Id);
 ```
