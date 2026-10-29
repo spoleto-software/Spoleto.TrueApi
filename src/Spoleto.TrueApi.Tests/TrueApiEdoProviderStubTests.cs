@@ -9,6 +9,7 @@ using Spoleto.TrueApi.Auth.Providers;
 using Spoleto.TrueApi.Edo.Enums;
 using Spoleto.TrueApi.Edo.Models;
 using Spoleto.TrueApi.Edo.Models.Options;
+using Spoleto.TrueApi.Edo.Models.Upd;
 using Spoleto.TrueApi.Edo.Providers;
 
 namespace Spoleto.TrueApi.Tests
@@ -167,6 +168,61 @@ namespace Spoleto.TrueApi.Tests
                 [SellerFileName + ".xml"] = Encoding.GetEncoding("windows-1251").GetBytes(sellerXml),
                 [SellerFileName + ".p7s"] = signature
             });
+
+        private static readonly string[] MarkCodes = ["010460000000000121abc", "010460000000000121def"];
+
+        /// <summary>
+        /// УПД СЧФДОП из одной строки 22%: маркированный товар с двумя кодами или обычный.
+        /// </summary>
+        private static EdoSellerUniversalTransferDocument CreateUniversalTransferDocument(bool isMarked = true, string? revisionNumber = null)
+        {
+            var seller = new EdoOrganization
+            {
+                OrganizationIdentificationInfo = new() { LegalPerson = new() { Name = "ООО «Продавец»", Inn = "7777777777", Kpp = "777701001" } },
+                Address = new() { RussianAddress = new() { RegionCode = "77", Region = "г. Москва" } }
+            };
+
+            return new EdoSellerUniversalTransferDocument
+            {
+                SenderEdoId = "2LT-2",
+                RecipientEdoId = "2LT-1",
+                DateCreation = new DateTime(2026, 4, 2, 10, 15, 0, DateTimeKind.Utc),
+                Function = EdoDocumentFunction.InvoiceAndPrimaryDocument,
+                DocumentNumber = "15",
+                DocumentDate = new DateTime(2026, 4, 1),
+                RevisionNumber = revisionNumber,
+                RevisionDate = revisionNumber == null ? null : new DateTime(2026, 4, 3),
+                DocumentCreator = seller,
+                Sellers = [seller],
+                Buyers = [new() { OrganizationIdentificationInfo = new() { LegalPerson = new() { Name = "ООО «Покупатель»", Inn = "0000000000", Kpp = "000001001" } } }],
+                Items =
+                [
+                    new()
+                    {
+                        ProductName = "Кроссовки",
+                        UnitCode = "796",
+                        UnitName = "шт",
+                        Quantity = 2,
+                        Price = 100,
+                        SumWithoutVat = 200,
+                        TaxRate = EdoTaxRate.TwentyTwoPercent,
+                        Vat = 44,
+                        Sum = 244,
+                        AdditionalInfo = isMarked ? new() { ItemIdentificationNumberList = [new() { MarkItems = [.. MarkCodes] }] } : null
+                    }
+                ],
+                TransferInfo = new() { TransferDetails = new() { Date = new DateTime(2026, 4, 2) } },
+                Signers =
+                [
+                    new()
+                    {
+                        JobTitle = "Директор",
+                        AuthorityConfirmationType = EdoAuthorityConfirmationType.ElectronicSignatureData,
+                        Person = new() { Surname = "Иванов", FirstName = "Иван", Patronymic = "Иванович" }
+                    }
+                ]
+            };
+        }
 
         /// <summary>
         /// Файл черновика как есть. В тестах подписания - XML в windows-1251 с кириллицей: перекодирование изменило бы его байты.
@@ -502,6 +558,160 @@ namespace Spoleto.TrueApi.Tests
         }
 
         [Test]
+        public async Task PostUniversalTransferDocument_Draft_PostsFileWithoutSignature()
+        {
+            // Arrange
+            var handler = new StubHttpMessageHandler(CreateResponse(HttpStatusCode.OK, $$"""{"id":"{{DocumentId}}"}""", "application/json"));
+            using var edoProvider = new FakeSigningEdoProvider(new HttpClient(handler), new FakeTokenProvider(), SignatureBase64);
+
+            // Act
+            var result = await edoProvider.PostUniversalTransferDocumentAsync(CreateSettings(), CreateUniversalTransferDocument(), isDraft: true);
+
+            // Assert
+            var request = handler.Requests.Single();
+            var part = request.Parts!.Single();
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.Id, Is.EqualTo(DocumentId));
+                Assert.That(request.Method, Is.EqualTo(HttpMethod.Post));
+                Assert.That(request.Uri.ToString(), Is.EqualTo(ServiceUrl + "/api/v3/true-api/edo/outgoing-documents"));
+                Assert.That(request.ContentType, Is.EqualTo("multipart/form-data"));
+                Assert.That(part.Name, Is.EqualTo("content"));
+                Assert.That(part.FileName, Is.EqualTo(result.FileId + ".xml"));
+                Assert.That(part.ContentType, Is.EqualTo("text/xml"));
+                Assert.That(part.Content, Is.EqualTo(result.RawContent));
+                Assert.That(result.RawContent, Is.EqualTo(Encoding.GetEncoding("windows-1251").GetBytes(result.Content)));
+                Assert.That(XDocument.Load(new MemoryStream(result.RawContent)).Root!.Attribute("ИдФайл")!.Value, Is.EqualTo(result.FileId));
+                Assert.That(edoProvider.SignedContents, Is.Empty);
+            });
+        }
+
+        [Test]
+        public async Task PostUniversalTransferDocument_SignsFileBytesAndPostsSignature()
+        {
+            // Arrange
+            var handler = new StubHttpMessageHandler(CreateResponse(HttpStatusCode.OK, $$"""{"id":"{{DocumentId}}"}""", "application/json"));
+            using var edoProvider = new FakeSigningEdoProvider(new HttpClient(handler), new FakeTokenProvider(), SignatureBase64);
+
+            // Act
+            var result = await edoProvider.PostUniversalTransferDocumentAsync(CreateSettings(), CreateUniversalTransferDocument());
+
+            // Assert
+            var parts = handler.Requests.Single().Parts!;
+            Assert.That(parts.Select(x => x.Name), Is.EqualTo(new[] { "content", "signature" }));
+            Assert.Multiple(() =>
+            {
+                Assert.That(edoProvider.SignedContents.Single(), Is.EqualTo(result.RawContent));
+                Assert.That(parts[0].Content, Is.EqualTo(result.RawContent));
+                Assert.That(parts[1].ContentType, Is.EqualTo("text/plain"));
+                Assert.That(parts[1].ContentEncoding, Is.EqualTo("base64"));
+                Assert.That(Encoding.UTF8.GetString(parts[1].Content), Is.EqualTo(SignatureBase64));
+            });
+        }
+
+        [Test]
+        public async Task PostUniversalTransferDocument_Updi_PostsToUpdiMethod()
+        {
+            // Arrange
+            var handler = new StubHttpMessageHandler(CreateResponse(HttpStatusCode.OK, $$"""{"id":"{{DocumentId}}"}""", "application/json"));
+            using var edoProvider = new FakeSigningEdoProvider(new HttpClient(handler), new FakeTokenProvider(), SignatureBase64);
+
+            // Act
+            var result = await edoProvider.PostUniversalTransferDocumentAsync(CreateSettings(), CreateUniversalTransferDocument(revisionNumber: "1"), isDraft: true);
+
+            // Assert
+            var revision = XDocument.Parse(result.Content).Root!.Element("Документ")!.Element("СвСчФакт")!.Element("ИспрДок")!;
+            Assert.Multiple(() =>
+            {
+                Assert.That(handler.Requests.Single().Uri.ToString(), Is.EqualTo(ServiceUrl + "/api/v3/true-api/edo/outgoing-documents/xml/updi"));
+                Assert.That(revision.Attribute("НомИспр")!.Value, Is.EqualTo("1"));
+                Assert.That(revision.Attribute("ДатаИспр")!.Value, Is.EqualTo("03.04.2026"));
+            });
+        }
+
+        /// <summary>
+        /// XML сверен со старым генератором CIS.EDM.CRPT (XmlHelperV5_03) символ в символ, здесь - ключевые места формата 970.
+        /// </summary>
+        [Test]
+        public async Task PostUniversalTransferDocument_CreatesFormat970Xml()
+        {
+            // Arrange
+            var handler = new StubHttpMessageHandler(CreateResponse(HttpStatusCode.OK, $$"""{"id":"{{DocumentId}}"}""", "application/json"));
+            using var edoProvider = new FakeSigningEdoProvider(new HttpClient(handler), new FakeTokenProvider(), SignatureBase64);
+
+            // Act
+            var result = await edoProvider.PostUniversalTransferDocumentAsync(CreateSettings(), CreateUniversalTransferDocument(), isDraft: true);
+
+            // Assert
+            var file = XDocument.Parse(result.Content).Root!;
+            var document = file.Element("Документ")!;
+            var invoice = document.Element("СвСчФакт")!;
+            var item = document.Element("ТаблСчФакт")!.Element("СведТов")!;
+            var total = document.Element("ТаблСчФакт")!.Element("ВсегоОпл")!;
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.Content, Does.StartWith("""<?xml version="1.0" encoding="windows-1251"?>"""));
+                Assert.That(file.Attribute("ВерсФорм")!.Value, Is.EqualTo("5.03"));
+                Assert.That(document.Attribute("КНД")!.Value, Is.EqualTo("1115131"));
+                Assert.That(document.Attribute("Функция")!.Value, Is.EqualTo("СЧФДОП"));
+                Assert.That(document.Attribute("ДатаИнфПр")!.Value, Is.EqualTo("02.04.2026"));
+                Assert.That(document.Attribute("ВремИнфПр")!.Value, Is.EqualTo("10.15.00"));
+                Assert.That(document.Attribute("НаимЭконСубСост")!.Value, Is.EqualTo("ООО «Продавец», ИНН/КПП: 7777777777/777701001"));
+                Assert.That(invoice.Attribute("НомерДок")!.Value, Is.EqualTo("15"));
+                Assert.That(invoice.Attribute("ДатаДок")!.Value, Is.EqualTo("01.04.2026"));
+                Assert.That(invoice.Element("СвПрод")!.Element("ИдСв")!.Element("СвЮЛУч")!.Attribute("ИННЮЛ")!.Value, Is.EqualTo("7777777777"));
+                Assert.That(invoice.Element("СвПокуп")!.Element("ИдСв")!.Element("СвЮЛУч")!.Attribute("ИННЮЛ")!.Value, Is.EqualTo("0000000000"));
+                Assert.That(invoice.Element("ДенИзм")!.Attribute("КодОКВ")!.Value, Is.EqualTo("643"));
+                Assert.That(item.Attribute("НомСтр")!.Value, Is.EqualTo("1"));
+                Assert.That(item.Attribute("НалСт")!.Value, Is.EqualTo("22%"));
+                Assert.That(item.Attribute("СтТовУчНал")!.Value, Is.EqualTo("244.00"));
+                Assert.That(item.Element("СумНал")!.Element("СумНал")!.Value, Is.EqualTo("44.00"));
+                Assert.That(item.Element("ДопСведТов")!.Element("НомСредИдентТов")!.Elements("КИЗ").Select(x => x.Value), Is.EqualTo(MarkCodes));
+                Assert.That(total.Attribute("СтТовУчНалВсего")!.Value, Is.EqualTo("244.00"));
+                Assert.That(document.Element("СвПродПер")!.Element("СвПер")!.Element("БезДокОснПер")!.Value, Is.EqualTo("1"));
+                Assert.That(document.Element("Подписант")!.Attribute("СпосПодтПолном")!.Value, Is.EqualTo("1"));
+            });
+        }
+
+        [TestCase(true, null, "_0_1_0_0_0_00")]
+        [TestCase(false, null, "_0_0_0_0_0_00")]
+        [TestCase(false, new[] { EdoGoodsCategory.Alcohol, EdoGoodsCategory.Tobacco }, "_0_0_1_1_0_00")]
+        public async Task PostUniversalTransferDocument_GeneratesFileIdFromParticipantsAndCategories(bool isMarked, EdoGoodsCategory[]? categories, string expectedFlags)
+        {
+            // Arrange
+            var handler = new StubHttpMessageHandler(CreateResponse(HttpStatusCode.OK, $$"""{"id":"{{DocumentId}}"}""", "application/json"));
+            using var edoProvider = new FakeSigningEdoProvider(new HttpClient(handler), new FakeTokenProvider(), SignatureBase64);
+            var document = CreateUniversalTransferDocument(isMarked) with { GoodsCategories = categories?.ToList() };
+
+            // Act
+            var result = await edoProvider.PostUniversalTransferDocumentAsync(CreateSettings(), document, isDraft: true);
+
+            // Assert
+            Assert.That(result.FileId, Does.Match(@"^ON_NSCHFDOPPR_2LT-1_2LT-2_20260402_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}" + expectedFlags + "$"));
+        }
+
+        [Test]
+        public void PostUniversalTransferDocument_ItemWithoutVatAmount_ThrowsBeforeRequest()
+        {
+            // Arrange
+            var handler = new StubHttpMessageHandler();
+            using var edoProvider = new FakeSigningEdoProvider(new HttpClient(handler), new FakeTokenProvider(), SignatureBase64);
+            var document = CreateUniversalTransferDocument();
+            document.Items[0].Vat = null;
+
+            // Act
+            var ex = Assert.ThrowsAsync<ArgumentException>(() => edoProvider.PostUniversalTransferDocumentAsync(CreateSettings(), document));
+
+            // Assert
+            Assert.Multiple(() =>
+            {
+                Assert.That(ex!.Message, Does.Contain("строки 1"));
+                Assert.That(handler.Requests, Is.Empty);
+                Assert.That(edoProvider.SignedContents, Is.Empty);
+            });
+        }
+
+        [Test]
         public async Task Unauthorized_RefreshesTokenOnce()
         {
             // Arrange
@@ -563,7 +773,9 @@ namespace Spoleto.TrueApi.Tests
             Assert.That(ex.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
         }
 
-        private sealed record StubRequest(HttpMethod Method, Uri Uri, string? Authorization, string Accept, string? ContentType, string? ContentEncoding, string? Body);
+        private sealed record StubRequest(HttpMethod Method, Uri Uri, string? Authorization, string Accept, string? ContentType, string? ContentEncoding, string? Body, List<StubPart>? Parts);
+
+        private sealed record StubPart(string? Name, string? FileName, string? ContentType, string? ContentEncoding, byte[] Content);
 
         private sealed class StubHttpMessageHandler : HttpMessageHandler
         {
@@ -581,8 +793,20 @@ namespace Spoleto.TrueApi.Tests
                 // Тело читаем здесь: после отправки провайдер освобождает запрос вместе с телом.
                 var body = request.Content == null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
 
+                List<StubPart>? parts = null;
+                if (request.Content is MultipartContent multipart)
+                {
+                    parts = [];
+                    foreach (var part in multipart)
+                    {
+                        var disposition = part.Headers.ContentDisposition;
+                        parts.Add(new StubPart(disposition?.Name?.Trim('"'), disposition?.FileName?.Trim('"'), part.Headers.ContentType?.MediaType,
+                            part.Headers.ContentEncoding.ToString(), await part.ReadAsByteArrayAsync(cancellationToken)));
+                    }
+                }
+
                 Requests.Add(new StubRequest(request.Method, request.RequestUri!, request.Headers.Authorization?.ToString(), request.Headers.Accept.ToString(),
-                    request.Content?.Headers.ContentType?.MediaType, request.Content?.Headers.ContentEncoding.ToString(), body));
+                    request.Content?.Headers.ContentType?.MediaType, request.Content?.Headers.ContentEncoding.ToString(), body, parts));
 
                 return _responses.Dequeue();
             }

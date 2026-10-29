@@ -13,6 +13,7 @@ using Spoleto.TrueApi.Edo.Extensions;
 using Spoleto.TrueApi.Edo.Helpers;
 using Spoleto.TrueApi.Edo.Models;
 using Spoleto.TrueApi.Edo.Models.Options;
+using Spoleto.TrueApi.Edo.Models.Upd;
 
 namespace Spoleto.TrueApi.Edo.Providers
 {
@@ -133,9 +134,9 @@ namespace Spoleto.TrueApi.Edo.Providers
             return new HttpRequestException(message, null, responseMessage.StatusCode);
         }
 
-        private async Task<T> InvokeAsync<T>(TrueApiEdoProviderOption settings, HttpMethod method, Uri uri)
+        private async Task<T> InvokeAsync<T>(TrueApiEdoProviderOption settings, HttpMethod method, Uri uri, Func<HttpContent>? createContent = null)
         {
-            using var responseMessage = await SendAsync(settings, method, uri).ConfigureAwait(false);
+            using var responseMessage = await SendAsync(settings, method, uri, createContent: createContent).ConfigureAwait(false);
 
             var result = await responseMessage.Content.ReadAsStringAsync().ConfigureAwait(false);
             try
@@ -162,7 +163,12 @@ namespace Spoleto.TrueApi.Edo.Providers
         // Подписание исходящих документов - в разделе edo, а списки и файлы - в elk.
         private const string EdoOutgoingDocumentsPath = "/api/v3/true-api/edo/outgoing-documents";
 
+        // Загрузка УПДи - отдельный метод.
+        private const string UpdiPath = "/xml/updi";
+
         private const string Base64ContentEncoding = "base64";
+
+        private const string XmlMediaType = "text/xml";
 
         private async Task<EdoDocumentCollection> GetDocumentListAsync(TrueApiEdoProviderOption settings, string documentsPath, EdoDocumentSearchModel? searchModel)
         {
@@ -231,6 +237,24 @@ namespace Spoleto.TrueApi.Edo.Providers
             return content;
         }
 
+        /// <summary>
+        /// Тело загрузки файла: файл в поле content и, если документ не черновик, подпись в поле signature.
+        /// </summary>
+        private static MultipartFormDataContent CreateDocumentContent(string fileId, byte[] rawContent, string? signature)
+        {
+            var fileContent = new ByteArrayContent(rawContent);
+            fileContent.Headers.ContentType = new MediaTypeHeaderValue(XmlMediaType);
+            fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data") { Name = "\"content\"", FileName = $"\"{fileId}.xml\"" };
+
+            var content = new MultipartFormDataContent { fileContent };
+            if (signature != null)
+            {
+                content.Add(CreateSignatureContent(signature), "signature");
+            }
+
+            return content;
+        }
+
         /// <inheritdoc />
         public Task<EdoDocumentCollection> GetIncomingDocumentListAsync(TrueApiEdoProviderOption settings, EdoDocumentSearchModel? searchModel = null)
             => GetDocumentListAsync(settings, IncomingDocumentsPath, searchModel);
@@ -273,6 +297,36 @@ namespace Spoleto.TrueApi.Edo.Providers
             var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"{EdoOutgoingDocumentsPath}/{Uri.EscapeDataString(documentId)}/signature"));
 
             using var responseMessage = await SendAsync(settings, HttpMethod.Post, uri, createContent: () => CreateSignatureContent(signature)).ConfigureAwait(false);
+        }
+
+        /// <inheritdoc />
+        public async Task<EdoPostDocumentResult> PostUniversalTransferDocumentAsync(TrueApiEdoProviderOption settings, EdoSellerUniversalTransferDocument document, bool isDraft = false)
+        {
+            ArgumentNullException.ThrowIfNull(document);
+
+            var fileId = string.IsNullOrEmpty(document.FileId) ? EdoUniversalTransferDocumentXmlHelper.GetFileId(document) : document.FileId;
+            var content = EdoUniversalTransferDocumentXmlHelper.CreateXml(document, fileId);
+            var rawContent = EdoUniversalTransferDocumentXmlHelper.FileEncoding.GetBytes(content);
+
+            // Без подписи документ остаётся черновиком, с подписью сразу уходит получателю.
+            var signature = isDraft ? null : SignDetached(settings, rawContent);
+
+            var path = document.IsUPDi ? EdoOutgoingDocumentsPath + UpdiPath : EdoOutgoingDocumentsPath;
+            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, path));
+
+            var result = await InvokeAsync<EdoIdResult>(settings, HttpMethod.Post, uri, () => CreateDocumentContent(fileId, rawContent, signature)).ConfigureAwait(false);
+            if (string.IsNullOrEmpty(result?.Id))
+            {
+                throw new InvalidDataException($"«ЭДО Лайт» не вернул идентификатор загруженного файла {fileId}.");
+            }
+
+            return new EdoPostDocumentResult
+            {
+                Id = result.Id,
+                FileId = fileId,
+                Content = content,
+                RawContent = rawContent
+            };
         }
     }
 }

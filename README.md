@@ -88,4 +88,36 @@ var outgoingSellerInfo = await edoProvider.GetOutgoingSellerDocumentInfoAsync(se
 // Библиотека скачивает файл черновика и подписывает его байты как есть открепленной подписью:
 var drafts = await edoProvider.GetOutgoingDocumentListAsync(settings, new EdoDocumentSearchModel { Status = EdoDocumentStatus.Draft });
 await edoProvider.SignOutgoingDocumentAsync(settings, drafts.Items[0].Documents[0].Id);
+
+// Отправка УПД формата 970: библиотека формирует XML (windows-1251), подписывает его и загружает.
+// С RevisionNumber документ уходит как УПДи. С isDraft: true - черновик без подписи, его потом отправляет SignOutgoingDocumentAsync.
+var seller = new EdoOrganization
+{
+    OrganizationIdentificationInfo = new() { LegalPerson = new() { Name = "ООО «Продавец»", Inn = "7777777777", Kpp = "777701001" } },
+    Address = new() { RussianAddress = new() { RegionCode = "77", Region = "г. Москва" } }
+};
+var upd = new EdoSellerUniversalTransferDocument
+{
+    SenderEdoId = "2LT-0000000001", // идентификаторы участников ЭДО входят в имя файла, ИдФайл библиотека формирует сама
+    RecipientEdoId = "2LT-0000000002",
+    Function = EdoDocumentFunction.InvoiceAndPrimaryDocument,
+    DocumentNumber = "15",
+    DocumentDate = new DateTime(2026, 4, 1),
+    DocumentCreator = seller,
+    Sellers = [seller],
+    Buyers = [new() { OrganizationIdentificationInfo = new() { LegalPerson = new() { Name = "ООО «Покупатель»", Inn = "0000000000", Kpp = "000001001" } } }],
+    Items =
+    [
+        new()
+        {
+            ProductName = "Кроссовки", UnitCode = "796", UnitName = "шт", Quantity = 1, Price = 100, SumWithoutVat = 100,
+            TaxRate = EdoTaxRate.TwentyTwoPercent, Vat = 22, Sum = 122,
+            AdditionalInfo = new() { ItemIdentificationNumberList = [new() { MarkItems = ["010460000000000121abc"] }] }
+        }
+    ],
+    TransferInfo = new() { TransferDetails = new() { Date = new DateTime(2026, 4, 2) } },
+    Signers = [new() { JobTitle = "Директор", AuthorityConfirmationType = EdoAuthorityConfirmationType.ElectronicSignatureData, Person = new() { Surname = "Иванов", FirstName = "Иван" } }]
+};
+var posted = await edoProvider.PostUniversalTransferDocumentAsync(settings, upd);
+var updId = posted.Id; // FileId - ИдФайл, Content и RawContent - отправленный XML
 ```

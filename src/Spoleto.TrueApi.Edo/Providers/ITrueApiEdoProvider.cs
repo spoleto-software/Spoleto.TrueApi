@@ -1,5 +1,6 @@
 ﻿using Spoleto.TrueApi.Edo.Models;
 using Spoleto.TrueApi.Edo.Models.Options;
+using Spoleto.TrueApi.Edo.Models.Upd;
 
 namespace Spoleto.TrueApi.Edo.Providers
 {
@@ -194,5 +195,34 @@ namespace Spoleto.TrueApi.Edo.Providers
         /// <param name="settings">Настройки провайдера.</param>
         /// <param name="documentId">Идентификатор черновика в системе ЭДО Оператора, полученный при его загрузке.</param>
         Task SignOutgoingDocumentAsync(TrueApiEdoProviderOption settings, string documentId);
+
+        /// <summary>
+        /// Отправка информации продавца УПД / УПДи формата 970: формирование XML, подпись и загрузка в «ЭДО Лайт».
+        /// </summary>
+        /// <remarks>
+        /// Если задан <see cref="EdoSellerUniversalTransferDocument.RevisionNumber"/>, документ загружается как УПДи.
+        /// Черновик не подписывается и остаётся у отправителя, его потом отправляет <see cref="SignOutgoingDocumentAsync"/>.
+        /// Иначе файл подписывается сертификатом <see cref="TrueApiEdoProviderOption.CertificateThumbprint"/> и сразу уходит получателю.
+        /// </remarks>
+        /// <param name="settings">Настройки провайдера.</param>
+        /// <param name="document">Информация продавца.</param>
+        /// <param name="isDraft">Загрузить без подписи как черновик, не отправляя получателю.</param>
+        /// <returns>Идентификатор документа в «ЭДО Лайт» и отправленный файл.</returns>
+        EdoPostDocumentResult PostUniversalTransferDocument(TrueApiEdoProviderOption settings, EdoSellerUniversalTransferDocument document, bool isDraft = false)
+            => PostUniversalTransferDocumentAsync(settings, document, isDraft).GetAwaiter().GetResult();
+
+        /// <summary>
+        /// Отправка информации продавца УПД / УПДи формата 970: формирование XML, подпись и загрузка в «ЭДО Лайт».
+        /// </summary>
+        /// <remarks>
+        /// Если задан <see cref="EdoSellerUniversalTransferDocument.RevisionNumber"/>, документ загружается как УПДи.
+        /// Черновик не подписывается и остаётся у отправителя, его потом отправляет <see cref="SignOutgoingDocumentAsync"/>.
+        /// Иначе файл подписывается сертификатом <see cref="TrueApiEdoProviderOption.CertificateThumbprint"/> и сразу уходит получателю.
+        /// </remarks>
+        /// <param name="settings">Настройки провайдера.</param>
+        /// <param name="document">Информация продавца.</param>
+        /// <param name="isDraft">Загрузить без подписи как черновик, не отправляя получателю.</param>
+        /// <returns>Идентификатор документа в «ЭДО Лайт» и отправленный файл.</returns>
+        Task<EdoPostDocumentResult> PostUniversalTransferDocumentAsync(TrueApiEdoProviderOption settings, EdoSellerUniversalTransferDocument document, bool isDraft = false);
     }
 }

@@ -1,9 +1,11 @@
 ﻿using System.Text;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using CIS.Cryptography;
 using Spoleto.TrueApi.Edo.Enums;
 using Spoleto.TrueApi.Edo.Models;
 using Spoleto.TrueApi.Edo.Models.Options;
+using Spoleto.TrueApi.Edo.Models.Upd;
 using Spoleto.TrueApi.Edo.Providers;
 
 namespace Spoleto.TrueApi.Tests
@@ -249,6 +251,112 @@ namespace Spoleto.TrueApi.Tests
 
             // Assert
             AssertSellerDocumentInfo(info);
+        }
+
+        /// <summary>
+        /// Владелец сертификата из настроек - подписант документа: фамилия из SN, имя и отчество из G.
+        /// </summary>
+        private EdoPerson GetCertificateOwner()
+        {
+            var subject = CryptographyHelper.GetCertificates(true, true).Single(x => x.Certificate.Thumbprint.ToLower() == _testOption.CertificateThumbprint).Certificate.SubjectName;
+            TestContext.Out.WriteLine(subject);
+
+            var givenName = GetSubjectValue(subject, "G")?.Split(' ', 2);
+            return new EdoPerson
+            {
+                Surname = GetSubjectValue(subject, "SN") ?? "Тестов",
+                FirstName = givenName?[0] ?? "Тест",
+                Patronymic = givenName?.Length > 1 ? givenName[1] : null
+            };
+        }
+
+        private static string? GetSubjectValue(string subject, string key)
+        {
+            var match = Regex.Match(subject, $@"(?:^|,\s*){key}=(""[^""]*""|[^,]*)");
+            return match.Success ? match.Groups[1].Value.Trim('"') : null;
+        }
+
+        private static EdoOrganization ReadLegalPerson(XElement invoice, string elementName)
+        {
+            var legalPerson = invoice.Element(elementName)?.Element("ИдСв")?.Element("СвЮЛУч");
+            if (legalPerson == null)
+            {
+                Assert.Ignore($"В УПД на стенде {elementName} - не юридическое лицо.");
+            }
+
+            return new EdoOrganization
+            {
+                OrganizationIdentificationInfo = new()
+                {
+                    LegalPerson = new() { Name = legalPerson!.Attribute("НаимОрг")!.Value, Inn = legalPerson.Attribute("ИННЮЛ")!.Value, Kpp = legalPerson.Attribute("КПП")?.Value }
+                },
+                Address = new() { RussianAddress = new() { RegionCode = "77", Region = "г. Москва" } }
+            };
+        }
+
+        /// <summary>
+        /// УПД на стенде: идентификаторы ЭДО и стороны берутся из уже отправленного УПД (ИдФайл ON_NSCHFDOPPR_{получатель}_{отправитель}_…), подписант - владелец сертификата.
+        /// </summary>
+        private async Task<EdoSellerUniversalTransferDocument> CreateStandUniversalTransferDocumentAsync(TrueApiEdoProvider edoProvider, TrueApiEdoProviderOption settings)
+        {
+            var list = await edoProvider.GetOutgoingDocumentListAsync(settings, new EdoDocumentSearchModel { Limit = 50 });
+            var documentId = FindUpdDocumentId(list, "исходящих");
+            var file = XDocument.Load(new MemoryStream(await edoProvider.GetOutgoingDocumentAsync(settings, documentId))).Root!;
+
+            var fileIdParts = file.Attribute("ИдФайл")!.Value.Split('_');
+            var invoice = file.Element("Документ")!.Element("СвСчФакт")!;
+            var seller = ReadLegalPerson(invoice, "СвПрод");
+            var now = DateTime.UtcNow;
+
+            return new EdoSellerUniversalTransferDocument
+            {
+                SenderEdoId = fileIdParts[3],
+                RecipientEdoId = fileIdParts[2],
+                Function = EdoDocumentFunction.InvoiceAndPrimaryDocument,
+                DocumentNumber = $"Т-{now:yyyyMMddHHmmss}",
+                DocumentDate = now.Date,
+                DocumentCreator = seller,
+                Sellers = [seller],
+                Buyers = [ReadLegalPerson(invoice, "СвПокуп")],
+                Items =
+                [
+                    new()
+                    {
+                        ProductName = "Тестовый товар",
+                        UnitCode = "796",
+                        UnitName = "шт",
+                        Quantity = 1,
+                        Price = 100,
+                        SumWithoutVat = 100,
+                        TaxRate = EdoTaxRate.TwentyTwoPercent,
+                        Vat = 22,
+                        Sum = 122
+                    }
+                ],
+                TransferInfo = new() { TransferDetails = new() { Date = now.Date } },
+                Signers = [new() { JobTitle = "Директор", AuthorityConfirmationType = EdoAuthorityConfirmationType.ElectronicSignatureData, Person = GetCertificateOwner() }]
+            };
+        }
+
+        /// <summary>
+        /// Загружает черновик УПД формата 970. Его потом подписывает <see cref="SignOutgoingDocumentTest"/>.
+        /// </summary>
+        [Test]
+        [Explicit("Создаёт черновик УПД на стенде.")]
+        public async Task PostUniversalTransferDocumentTest()
+        {
+            // Arrange
+            var settings = CreateSettings();
+            using var edoProvider = new TrueApiEdoProvider();
+            var document = await CreateStandUniversalTransferDocumentAsync(edoProvider, settings);
+
+            // Act
+            var result = await edoProvider.PostUniversalTransferDocumentAsync(settings, document, isDraft: true);
+
+            // Assert
+            TestContext.Out.WriteLine(result);
+            var content = await edoProvider.GetOutgoingDocumentAsync(settings, result.Id);
+            Assert.That(XDocument.Load(new MemoryStream(content)).Root!.Attribute("ИдФайл")!.Value, Is.EqualTo(result.FileId));
         }
 
         /// <summary>
