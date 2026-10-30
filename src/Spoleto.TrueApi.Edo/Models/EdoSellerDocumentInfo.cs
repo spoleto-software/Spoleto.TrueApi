@@ -28,7 +28,10 @@ namespace Spoleto.TrueApi.Edo.Models
         /// <summary>
         /// Наименование первичного документа, согласованное сторонами сделки, атрибут НаимДокОпр.
         /// </summary>
-        public required string DocumentName { get; set; }
+        /// <remarks>
+        /// У счета-фактуры без документа об отгрузке (Функция = СЧФ) атрибута нет. К такому файлу нет и информации покупателя.
+        /// </remarks>
+        public string? DocumentName { get; set; }
 
         /// <summary>
         /// Функция документа, атрибут Функция.

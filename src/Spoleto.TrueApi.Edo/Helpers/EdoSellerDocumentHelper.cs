@@ -30,7 +30,7 @@ namespace Spoleto.TrueApi.Edo.Helpers
                 FileId = GetAttribute(document, fileElement, "ИдФайл"),
                 DateCreation = GetAttribute(document, documentElement, "ДатаИнфПр"),
                 TimeCreation = GetAttribute(document, documentElement, "ВремИнфПр"),
-                DocumentName = GetAttribute(document, documentElement, "НаимДокОпр"),
+                DocumentName = documentElement.Attribute("НаимДокОпр")?.Value,
                 Function = ParseFunction(document, GetAttribute(document, documentElement, "Функция")),
                 DocumentNumber = invoiceElement.Attribute("НомерДок")?.Value,
                 DocumentDate = GetAttribute(document, invoiceElement, "ДатаДок"),

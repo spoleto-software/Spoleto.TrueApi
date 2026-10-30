@@ -7,7 +7,8 @@ namespace Spoleto.TrueApi.Edo.Converters
     /// The custom json converter for <see cref="DateTime"/> as Unix timestamp in seconds.
     /// </summary>
     /// <remarks>
-    /// Чтение возвращает UTC время.
+    /// Как UnixDateTimeConverter из CIS.EDM: чтение возвращает местное время,
+    /// а при записи значение с <see cref="DateTimeKind.Local"/> или <see cref="DateTimeKind.Unspecified"/> считается местным временем, с <see cref="DateTimeKind.Utc"/> - UTC.
     /// </remarks>
     public class UnixDateTimeJsonConverter : JsonConverter<DateTime?>
     {
@@ -20,7 +21,7 @@ namespace Spoleto.TrueApi.Edo.Converters
                 ? long.Parse(reader.GetString()!)
                 : reader.GetInt64();
 
-            return DateTimeOffset.FromUnixTimeSeconds(seconds).UtcDateTime;
+            return DateTimeOffset.FromUnixTimeSeconds(seconds).LocalDateTime;
         }
 
         public override void Write(Utf8JsonWriter writer, DateTime? value, JsonSerializerOptions options)
@@ -31,7 +32,7 @@ namespace Spoleto.TrueApi.Edo.Converters
             }
             else
             {
-                writer.WriteNumberValue(new DateTimeOffset(DateTime.SpecifyKind(value.Value, DateTimeKind.Utc)).ToUnixTimeSeconds());
+                writer.WriteNumberValue(new DateTimeOffset(value.Value).ToUnixTimeSeconds());
             }
         }
     }

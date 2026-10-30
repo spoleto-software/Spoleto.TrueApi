@@ -43,13 +43,17 @@ namespace Spoleto.TrueApi.Edo.Helpers
         /// <param name="fileId">Идентификатор файла информации покупателя.</param>
         public static string CreateXml(EdoBuyerUniversalTransferDocument document, EdoSellerDocumentInfo sellerDocumentInfo, string fileId)
         {
-            Validate(document);
+            Validate(document, sellerDocumentInfo);
 
             return CreateFile(fileId, document.ApplicationCreator, CreateDocument(document, sellerDocumentInfo));
         }
 
-        private static void Validate(EdoBuyerUniversalTransferDocument document)
+        private static void Validate(EdoBuyerUniversalTransferDocument document, EdoSellerDocumentInfo sellerDocumentInfo)
         {
+            // НаимДокОпрПр обязателен, а в файле продавца НаимДокОпр есть только у документа об отгрузке.
+            if (string.IsNullOrEmpty(sellerDocumentInfo.DocumentName))
+                throw new InvalidDataException($"Файл продавца {sellerDocumentInfo.FileId}: нет наименования первичного документа (НаимДокОпр). Информация покупателя к счету-фактуре без документа об отгрузке (Функция = СЧФ) не формируется.");
+
             if (document.Signers == null || document.Signers.Count == 0)
                 throw new ArgumentException("Не указан подписант (Signers).", nameof(document));
 

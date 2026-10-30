@@ -61,6 +61,7 @@ using var edoProvider = new TrueApiEdoProvider();
 
 // Список входящих документов:
 var list = await edoProvider.GetIncomingDocumentListAsync(settings, new EdoDocumentSearchModel { Limit = 10, Status = EdoDocumentStatus.DeliveredSignatureRequired });
+// Даты, как в CIS.EDM: в ответе - местное время, а CreatedFrom и CreatedTo без DateTimeKind.Utc считаются местным временем.
 
 // Файл входящего документа как есть: XML для УПД, УКД и квитанций (для УПД - windows-1251), PDF для договоров с оператором ГИС МТ:
 var file = await edoProvider.GetIncomingDocumentAsync(settings, list.Items[0].Documents[0].Id);

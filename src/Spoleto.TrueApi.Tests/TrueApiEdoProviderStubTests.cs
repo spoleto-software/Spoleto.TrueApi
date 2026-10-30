@@ -2,6 +2,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using Spoleto.TrueApi.Auth.Models;
 using Spoleto.TrueApi.Auth.Models.Options;
@@ -307,7 +308,8 @@ namespace Spoleto.TrueApi.Tests
                 Assert.That(group.Status, Is.EqualTo(EdoDocumentStatus.Sent));
                 Assert.That(group.Type, Is.EqualTo(EdoDocumentType.UPDWithSCHFDOPInvoiceWaybill));
                 Assert.That(group.TotalPrice, Is.EqualTo(1930500m));
-                Assert.That(group.CreatedAt, Is.EqualTo(DateTimeOffset.FromUnixTimeSeconds(1582097164).UtcDateTime));
+                Assert.That(group.CreatedAt, Is.EqualTo(DateTimeOffset.FromUnixTimeSeconds(1582097164).LocalDateTime));
+                Assert.That(group.CreatedAt!.Value.Kind, Is.EqualTo(DateTimeKind.Local), "Как в CIS.EDM: даты из ответа - местное время.");
                 Assert.That(group.Recipient!.Id, Is.EqualTo(999999999));
                 Assert.That(group.Recipient.Inn, Is.EqualTo("0000000000"));
 
@@ -318,6 +320,24 @@ namespace Spoleto.TrueApi.Tests
                 Assert.That(document.Revision, Is.Null);
                 Assert.That(document.IsTitleSigned, Is.False);
             });
+        }
+
+        [TestCase(DateTimeKind.Unspecified)]
+        [TestCase(DateTimeKind.Local)]
+        public async Task GetDocumentList_CreatedFromNotUtc_IsLocalTime(DateTimeKind kind)
+        {
+            // Arrange
+            var createdFrom = new DateTime(2026, 10, 30, 0, 0, 0, kind);
+            var handler = new StubHttpMessageHandler(CreateResponse(HttpStatusCode.OK, """{"items":[]}""", "application/json"));
+            using var edoProvider = new TrueApiEdoProvider(new HttpClient(handler), true, new FakeTokenProvider());
+
+            // Act
+            await edoProvider.GetIncomingDocumentListAsync(CreateSettings(), new EdoDocumentSearchModel { CreatedFrom = createdFrom });
+
+            // Assert
+            // Как в CIS.EDM: граница без Kind и местная - местное время.
+            var expected = new DateTimeOffset(createdFrom, TimeZoneInfo.Local.GetUtcOffset(createdFrom)).ToUnixTimeSeconds();
+            Assert.That(handler.Requests.Single().Uri.Query, Is.EqualTo($"?created_from={expected}"));
         }
 
         [TestCase(false, "incoming-documents")]
@@ -513,6 +533,27 @@ namespace Spoleto.TrueApi.Tests
 
             // Assert
             Assert.That(ex!.Message, Does.Contain(expectedReason).And.Contain(SellerFileName));
+        }
+
+        [Test]
+        public async Task GetSellerDocumentInfo_InvoiceWithoutDocumentName_ReadsWithoutName()
+        {
+            // Arrange
+            // У счета-фактуры без документа об отгрузке нет НаимДокОпр.
+            var sellerXml = Regex.Replace(CreateSellerXml(null).Replace("Функция=\"СЧФДОП\"", "Функция=\"СЧФ\""), " НаимДокОпр=\"[^\"]+\"", "");
+            var handler = new StubHttpMessageHandler(CreateSellerArchiveResponse(sellerXml, [0x30]));
+            using var edoProvider = new TrueApiEdoProvider(new HttpClient(handler), true, new FakeTokenProvider());
+
+            // Act
+            var info = await edoProvider.GetIncomingSellerDocumentInfoAsync(CreateSettings(), DocumentId);
+
+            // Assert
+            Assert.Multiple(() =>
+            {
+                Assert.That(info.Function, Is.EqualTo(EdoDocumentFunction.Invoice));
+                Assert.That(info.DocumentName, Is.Null);
+                Assert.That(info.FileId, Is.EqualTo(SellerFileName));
+            });
         }
 
         [Test]
@@ -876,6 +917,26 @@ namespace Spoleto.TrueApi.Tests
             Assert.Multiple(() =>
             {
                 Assert.That(ex!.Message, Does.Contain(oldFormatFileName).And.Contain("970"));
+                Assert.That(handler.Requests, Has.Count.EqualTo(1));
+                Assert.That(edoProvider.SignedContents, Is.Empty);
+            });
+        }
+
+        [Test]
+        public void ReceiptUniversalTransferDocument_SellerInvoiceWithoutDocumentName_ThrowsBeforeSigning()
+        {
+            // Arrange
+            var sellerXml = Regex.Replace(CreateSellerXml(null).Replace("Функция=\"СЧФДОП\"", "Функция=\"СЧФ\""), " НаимДокОпр=\"[^\"]+\"", "");
+            var handler = new StubHttpMessageHandler(CreateSellerArchiveResponse(sellerXml, [0x30]));
+            using var edoProvider = new FakeSigningEdoProvider(new HttpClient(handler), new FakeTokenProvider(), SignatureBase64);
+
+            // Act
+            var ex = Assert.ThrowsAsync<InvalidDataException>(() => edoProvider.ReceiptUniversalTransferDocumentAsync(CreateSettings(), CreateBuyerUniversalTransferDocument()));
+
+            // Assert
+            Assert.Multiple(() =>
+            {
+                Assert.That(ex!.Message, Does.Contain(SellerFileName).And.Contain("НаимДокОпр"));
                 Assert.That(handler.Requests, Has.Count.EqualTo(1));
                 Assert.That(edoProvider.SignedContents, Is.Empty);
             });
