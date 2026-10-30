@@ -79,7 +79,10 @@ namespace Spoleto.TrueApi.Tests
 
         private const string DocumentId = "220262cf-0fe7-4d3f-996a-038181ba7812";
 
-        private const string SellerFileName = "ON_NSCHFDOPPR_2BM-0000000000-000000000_2BM-7777777777-777777777_20260402_" + DocumentId;
+        // Имя файла продавца формата 970: получатель, отправитель, дата, GUID и признаки N2-N6 (маркированный товар).
+        private const string SellerFileName = "ON_NSCHFDOPPR_2BM-0000000000-000000000_2BM-7777777777-777777777_20260402_" + DocumentId + "_0_1_0_0_0_00";
+
+        private const string EventId = "000a0a00-0aaa-0a00-000a-0a00a0a0aa00";
 
         // Начало подписи CMS в Base64 с переносом строки, как её возвращает КриптоПро.
         private const string SignatureBase64 = "MIIPkQYJKoZIhvcNAQcCoIIPgjCCD34CAQExDjAMBggqhQMHAQECAwUAMAsGCSqG\r\nSIb3DQEHAaCCCRUwggkRMIIIvqADAgECAhEBr1uLAFartopGqtxJllj2fjAKBggq";
@@ -223,6 +226,37 @@ namespace Spoleto.TrueApi.Tests
                 ]
             };
         }
+
+        /// <summary>
+        /// Информация покупателя к <see cref="DocumentId"/>: приняли с расхождениями по акту, товар получил кладовщик.
+        /// </summary>
+        private static EdoBuyerUniversalTransferDocument CreateBuyerUniversalTransferDocument() => new()
+        {
+            DocumentId = DocumentId,
+            DateCreation = new DateTime(2026, 4, 3, 9, 30, 0, DateTimeKind.Utc),
+            DocumentCreator = new() { OrganizationIdentificationInfo = new() { LegalPerson = new() { Name = "ООО «Покупатель»", Inn = "0000000000", Kpp = "000001001" } } },
+            OperationType = "Поставка",
+            AcceptanceInfo = new()
+            {
+                OperationName = "Товары приняты с расхождениями",
+                Date = new DateTime(2026, 4, 3),
+                OperationNameInfo = new()
+                {
+                    Code = EdoOperationNameCode.AcceptedWithDiscrepancies,
+                    DiscrepancyDocument = new() { Name = "Акт о расхождениях", Number = "Р-1", Date = new DateTime(2026, 4, 3) }
+                },
+                ReceiverPerson = new() { Employee = new() { Surname = "Сидоров", FirstName = "Сидор", JobTitle = "Кладовщик" } }
+            },
+            Signers =
+            [
+                new()
+                {
+                    JobTitle = "Директор",
+                    AuthorityConfirmationType = EdoAuthorityConfirmationType.ElectronicSignatureData,
+                    Person = new() { Surname = "Петров", FirstName = "Петр", Patronymic = "Петрович" }
+                }
+            ]
+        };
 
         /// <summary>
         /// Файл черновика как есть. В тестах подписания - XML в windows-1251 с кириллицей: перекодирование изменило бы его байты.
@@ -707,6 +741,142 @@ namespace Spoleto.TrueApi.Tests
             {
                 Assert.That(ex!.Message, Does.Contain("строки 1"));
                 Assert.That(handler.Requests, Is.Empty);
+                Assert.That(edoProvider.SignedContents, Is.Empty);
+            });
+        }
+
+        // Описание метода 9.2.9 обещает event_id, а стенд возвращает id.
+        [TestCase($$"""{"id":"{{EventId}}"}""")]
+        [TestCase($$"""{"event_id":"{{EventId}}"}""")]
+        public async Task ReceiptUniversalTransferDocument_SignsTitleAndPostsItWithSellerDocumentId(string responseJson)
+        {
+            // Arrange
+            var handler = new StubHttpMessageHandler(
+                CreateSellerArchiveResponse(CreateSellerXml(null), [0x30, 0x82, 0x01, 0x00]),
+                CreateResponse(HttpStatusCode.Created, responseJson, "application/json"));
+            using var edoProvider = new FakeSigningEdoProvider(new HttpClient(handler), new FakeTokenProvider(), SignatureBase64);
+
+            // Act
+            var result = await edoProvider.ReceiptUniversalTransferDocumentAsync(CreateSettings(), CreateBuyerUniversalTransferDocument());
+
+            // Assert
+            Assert.That(handler.Requests, Has.Count.EqualTo(2));
+            var sellerRequest = handler.Requests[0];
+            var titleRequest = handler.Requests[1];
+            var parts = titleRequest.Parts!;
+            Assert.That(parts.Select(x => x.Name), Is.EqualTo(new[] { "content", "doc_id", "signature" }));
+            Assert.Multiple(() =>
+            {
+                Assert.That(sellerRequest.Method, Is.EqualTo(HttpMethod.Get));
+                Assert.That(sellerRequest.Uri.ToString(), Is.EqualTo(ServiceUrl + "/api/v3/true-api/elk/incoming-documents/" + DocumentId));
+
+                Assert.That(result.Id, Is.EqualTo(EventId));
+                // Отправитель и получатель файла продавца меняются местами, признаки N2-N6 повторяются.
+                Assert.That(result.FileId, Does.Match(@"^ON_NSCHFDOPPOK_2BM-7777777777-777777777_2BM-0000000000-000000000_20260403_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_0_1_0_0_0_00$"));
+                Assert.That(result.RawContent, Is.EqualTo(Encoding.GetEncoding("windows-1251").GetBytes(result.Content)));
+                Assert.That(edoProvider.SignedContents.Single(), Is.EqualTo(result.RawContent));
+
+                Assert.That(titleRequest.Method, Is.EqualTo(HttpMethod.Post));
+                Assert.That(titleRequest.Uri.ToString(), Is.EqualTo(ServiceUrl + "/api/v3/true-api/edo/incoming-documents/xml/upd/title/970"));
+                Assert.That(titleRequest.ContentType, Is.EqualTo("multipart/form-data"));
+                Assert.That(parts[0].FileName, Is.EqualTo(result.FileId + ".xml"));
+                Assert.That(parts[0].ContentType, Is.EqualTo("text/xml"));
+                Assert.That(parts[0].Content, Is.EqualTo(result.RawContent));
+                Assert.That(Encoding.UTF8.GetString(parts[1].Content), Is.EqualTo(DocumentId));
+                Assert.That(parts[2].ContentEncoding, Is.EqualTo("base64"));
+                Assert.That(Encoding.UTF8.GetString(parts[2].Content), Is.EqualTo(SignatureBase64));
+            });
+        }
+
+        [Test]
+        public async Task ReceiptUniversalTransferDocument_SellerUpdi_PostsToUpdiTitleMethod()
+        {
+            // Arrange
+            var handler = new StubHttpMessageHandler(
+                CreateSellerArchiveResponse(CreateSellerXml("1"), [0x30]),
+                CreateResponse(HttpStatusCode.Created, $$"""{"id":"{{EventId}}"}""", "application/json"));
+            using var edoProvider = new FakeSigningEdoProvider(new HttpClient(handler), new FakeTokenProvider(), SignatureBase64);
+
+            // Act
+            await edoProvider.ReceiptUniversalTransferDocumentAsync(CreateSettings(), CreateBuyerUniversalTransferDocument());
+
+            // Assert
+            Assert.That(handler.Requests[1].Uri.ToString(), Is.EqualTo(ServiceUrl + "/api/v3/true-api/edo/incoming-documents/xml/updi/title/970"));
+        }
+
+        /// <summary>
+        /// XML сверен со старым генератором CIS.EDM.CRPT (XmlHelperV5_03.Buyer), здесь - ключевые места формата 970
+        /// и два места, где старый генератор расходился с форматом: ВидОпер и РеквДокРасх внутри КодСодОпер.
+        /// </summary>
+        [Test]
+        public async Task ReceiptUniversalTransferDocument_CreatesFormat970XmlFromSellerFile()
+        {
+            // Arrange
+            var signature = new byte[] { 0x30, 0x82, 0x01, 0x00 };
+            var handler = new StubHttpMessageHandler(
+                CreateSellerArchiveResponse(CreateSellerXml(null), signature),
+                CreateResponse(HttpStatusCode.Created, $$"""{"id":"{{EventId}}"}""", "application/json"));
+            using var edoProvider = new FakeSigningEdoProvider(new HttpClient(handler), new FakeTokenProvider(), SignatureBase64);
+
+            // Act
+            var result = await edoProvider.ReceiptUniversalTransferDocumentAsync(CreateSettings(), CreateBuyerUniversalTransferDocument());
+
+            // Assert
+            var file = XDocument.Parse(result.Content).Root!;
+            var document = file.Element("Документ")!;
+            var sellerFile = document.Element("ИдИнфПрод")!;
+            var content = document.Element("СодФХЖ4")!;
+            var acceptance = content.Element("СвПрин")!;
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.Content, Does.StartWith("""<?xml version="1.0" encoding="windows-1251"?>"""));
+                Assert.That(file.Attribute("ИдФайл")!.Value, Is.EqualTo(result.FileId));
+                Assert.That(file.Attribute("ВерсФорм")!.Value, Is.EqualTo("5.03"));
+                Assert.That(document.Attribute("КНД")!.Value, Is.EqualTo("1115132"));
+                Assert.That(document.Attribute("УИД")!.Value, Is.EqualTo("0000000000-7777777777-000001"));
+                Assert.That(document.Attribute("ДатаИнфПок")!.Value, Is.EqualTo("03.04.2026"));
+                Assert.That(document.Attribute("ВремИнфПок")!.Value, Is.EqualTo("09.30.00"));
+                Assert.That(document.Attribute("НаимЭконСубСост")!.Value, Is.EqualTo("ООО «Покупатель», ИНН/КПП: 0000000000/000001001"));
+
+                Assert.That(sellerFile.Attribute("ИдФайлИнфПр")!.Value, Is.EqualTo(SellerFileName));
+                Assert.That(sellerFile.Attribute("ДатаФайлИнфПр")!.Value, Is.EqualTo("02.04.2026"));
+                Assert.That(sellerFile.Attribute("ВремФайлИнфПр")!.Value, Is.EqualTo("10.15.00"));
+                Assert.That(sellerFile.Element("ЭП")!.Value, Is.EqualTo(Convert.ToBase64String(signature)));
+
+                Assert.That(content.Attribute("НаимДокОпрПр")!.Value, Does.StartWith("Счет-фактура и документ об отгрузке"));
+                Assert.That(content.Attribute("Функция")!.Value, Is.EqualTo("СЧФДОП"));
+                Assert.That(content.Attribute("ПорНомДокИнфПр")!.Value, Is.EqualTo("15"));
+                Assert.That(content.Attribute("ДатаДокИнфПр")!.Value, Is.EqualTo("01.04.2026"));
+                Assert.That(content.Attribute("ВидОпер")!.Value, Is.EqualTo("Поставка"));
+
+                Assert.That(acceptance.Attribute("СодОпер")!.Value, Is.EqualTo("Товары приняты с расхождениями"));
+                Assert.That(acceptance.Attribute("ДатаПрин")!.Value, Is.EqualTo("03.04.2026"));
+                Assert.That(acceptance.Element("КодСодОпер")!.Attribute("КодИтога")!.Value, Is.EqualTo("2"));
+                Assert.That(acceptance.Element("КодСодОпер")!.Element("РеквДокРасх")!.Attribute("РеквНомерДок")!.Value, Is.EqualTo("Р-1"));
+                Assert.That(acceptance.Element("СвЛицПрин")!.Element("РабОргПок")!.Attribute("Должность")!.Value, Is.EqualTo("Кладовщик"));
+
+                Assert.That(document.Element("Подписант")!.Attribute("СпосПодтПолном")!.Value, Is.EqualTo("1"));
+                Assert.That(document.Elements().Select(x => x.Name.LocalName), Is.EqualTo(new[] { "ИдИнфПрод", "СодФХЖ4", "Подписант" }));
+            });
+        }
+
+        [Test]
+        public void ReceiptUniversalTransferDocument_SellerFileNotFormat970_ThrowsBeforeSigning()
+        {
+            // Arrange
+            const string oldFormatFileName = "ON_NSCHFDOPPR_2BM-0000000000-000000000_2BM-7777777777-777777777_20260402_" + DocumentId;
+            var sellerXml = CreateSellerXml(null).Replace($"ИдФайл=\"{SellerFileName}\"", $"ИдФайл=\"{oldFormatFileName}\"");
+            var handler = new StubHttpMessageHandler(CreateSellerArchiveResponse(sellerXml, [0x30]));
+            using var edoProvider = new FakeSigningEdoProvider(new HttpClient(handler), new FakeTokenProvider(), SignatureBase64);
+
+            // Act
+            var ex = Assert.ThrowsAsync<InvalidDataException>(() => edoProvider.ReceiptUniversalTransferDocumentAsync(CreateSettings(), CreateBuyerUniversalTransferDocument()));
+
+            // Assert
+            Assert.Multiple(() =>
+            {
+                Assert.That(ex!.Message, Does.Contain(oldFormatFileName).And.Contain("970"));
+                Assert.That(handler.Requests, Has.Count.EqualTo(1));
                 Assert.That(edoProvider.SignedContents, Is.Empty);
             });
         }

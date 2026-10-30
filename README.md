@@ -120,4 +120,17 @@ var upd = new EdoSellerUniversalTransferDocument
 };
 var posted = await edoProvider.PostUniversalTransferDocumentAsync(settings, upd);
 var updId = posted.Id; // FileId - ИдФайл, Content и RawContent - отправленный XML
+
+// Титул покупателя к входящему УПД / УПДи формата 970: библиотека скачивает файл продавца, берёт из него реквизиты, подпись,
+// отправителя и получателя, формирует XML, подписывает и загружает. Метод для УПД или УПДи выбирается по файлу продавца.
+var buyerTitle = new EdoBuyerUniversalTransferDocument
+{
+    DocumentId = list.Items[0].Documents[0].Id, // входящий УПД, который ждёт подписи
+    DocumentCreator = new() { OrganizationIdentificationInfo = new() { LegalPerson = new() { Name = "ООО «Покупатель»", Inn = "0000000000", Kpp = "000001001" } } },
+    AcceptanceInfo = new() { OperationName = "Товары приняты без претензий", Date = new DateTime(2026, 4, 3) }, // по умолчанию - приняты без расхождений
+    Signers = [new() { JobTitle = "Директор", AuthorityConfirmationType = EdoAuthorityConfirmationType.ElectronicSignatureData, Person = new() { Surname = "Петров", FirstName = "Петр" } }]
+};
+var receipt = await edoProvider.ReceiptUniversalTransferDocumentAsync(settings, buyerTitle);
+var titleId = receipt.Id; // идентификатор, который вернул сервис; сам документ остаётся под прежним идентификатором
+// УПД с кодами маркировки после титула покупателя уходит в ГИС МТ: статус «Подписан: Отправлен в ГИС МТ». УПД без кодов остаётся «Подписан».
 ```

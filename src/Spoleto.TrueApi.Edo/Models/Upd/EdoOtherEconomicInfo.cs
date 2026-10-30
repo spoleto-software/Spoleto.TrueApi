@@ -1,7 +1,7 @@
 ﻿namespace Spoleto.TrueApi.Edo.Models.Upd
 {
     /// <summary>
-    /// Информационное поле факта хозяйственной жизни (ИнфПолФХЖ1, ИнфПолФХЖ3).
+    /// Информационное поле факта хозяйственной жизни (ИнфПолФХЖ1, ИнфПолФХЖ3, ИнфПолФХЖ4).
     /// </summary>
     public record EdoOtherEconomicInfo
     {

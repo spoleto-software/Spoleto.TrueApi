@@ -294,9 +294,21 @@ namespace Spoleto.TrueApi.Tests
             };
         }
 
+        private const string MarkCodeAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+        /// <summary>
+        /// Случайный код маркировки: 01 + GTIN + 21 + серийный номер из 13 символов.
+        /// </summary>
+        private static string CreateRandomMarkCode()
+            => "010465029413145221" + new string(Random.Shared.GetItems(MarkCodeAlphabet.AsSpan(), 13));
+
         /// <summary>
         /// УПД на стенде: идентификаторы ЭДО и стороны берутся из уже отправленного УПД (ИдФайл ON_NSCHFDOPPR_{получатель}_{отправитель}_…), подписант - владелец сертификата.
         /// </summary>
+        /// <remarks>
+        /// Строка с кодом маркировки делает УПД маркированным (N3 = 1 в имени файла): после титула покупателя такой документ уходит в ГИС МТ,
+        /// статус «Подписан: Отправлен в ГИС МТ». УПД без кодов остаётся в статусе «Подписан». Код каждый раз новый, чтобы УПД на стенде не повторяли его.
+        /// </remarks>
         private async Task<EdoSellerUniversalTransferDocument> CreateStandUniversalTransferDocumentAsync(TrueApiEdoProvider edoProvider, TrueApiEdoProviderOption settings)
         {
             var list = await edoProvider.GetOutgoingDocumentListAsync(settings, new EdoDocumentSearchModel { Limit = 50 });
@@ -330,7 +342,8 @@ namespace Spoleto.TrueApi.Tests
                         SumWithoutVat = 100,
                         TaxRate = EdoTaxRate.TwentyTwoPercent,
                         Vat = 22,
-                        Sum = 122
+                        Sum = 122,
+                        AdditionalInfo = new() { ItemIdentificationNumberList = [new() { MarkItems = [CreateRandomMarkCode()] }] }
                     }
                 ],
                 TransferInfo = new() { TransferDetails = new() { Date = now.Date } },
@@ -381,6 +394,66 @@ namespace Spoleto.TrueApi.Tests
             // Assert
             var draftsAfterSigning = await edoProvider.GetOutgoingDocumentListAsync(settings, draftSearchModel);
             Assert.That(draftsAfterSigning.Items.SelectMany(x => x.Documents).Select(x => x.Id), Does.Not.Contain(documentId));
+        }
+
+        /// <summary>
+        /// Входящие УПД и УПДи формата 970, которые ждут титула покупателя: подписи ждут статусы 3 (доставлен) и 13 (просмотрен).
+        /// Титул покупателя бывает только у функций ДОП и СЧФДОП.
+        /// </summary>
+        private static async Task<EdoDocumentCollection> GetDocumentsAwaitingBuyerTitleAsync(TrueApiEdoProvider edoProvider, TrueApiEdoProviderOption settings)
+        {
+            var searchModel = new EdoDocumentSearchModel { Limit = 50, SortBy = EdoDocumentSortField.CreatedAt };
+            var delivered = await edoProvider.GetIncomingDocumentListAsync(settings, searchModel with { Status = EdoDocumentStatus.DeliveredSignatureRequired });
+            var reviewed = await edoProvider.GetIncomingDocumentListAsync(settings, searchModel with { Status = EdoDocumentStatus.ReviewedSignatureRequired });
+
+            // Каждый список отсортирован сервисом сам по себе: после объединения сортируем заново, новые первыми.
+            return new EdoDocumentCollection { Items = [.. delivered.Items.Concat(reviewed.Items).OrderByDescending(x => x.CreatedAt)] };
+        }
+
+        private static readonly EdoDocumentType[] BuyerTitleDocumentTypes =
+        [
+            EdoDocumentType.UPD970WithDOPWaybill,
+            EdoDocumentType.UPD970WithSCHFDOPInvoiceWaybill,
+            EdoDocumentType.UPDi970WithDOPWaybillCorrected,
+            EdoDocumentType.UPDi970WithSCHFDOPInvoiceCorrectedWaybill
+        ];
+
+        /// <summary>
+        /// Подписывает входящий УПД / УПДи формата 970, который ждёт подписи: «принято без расхождений», покупатель - из файла продавца, подписант - владелец сертификата.
+        /// </summary>
+        [Test]
+        [Explicit("Отправляет титул покупателя продавцу: входящий УПД на стенде становится подписанным.")]
+        public async Task ReceiptUniversalTransferDocumentTest()
+        {
+            // Arrange
+            var settings = CreateSettings();
+            using var edoProvider = new TrueApiEdoProvider();
+
+            var awaiting = await GetDocumentsAwaitingBuyerTitleAsync(edoProvider, settings);
+            var documentId = FindDocumentId(awaiting, "ждущих подписи входящих", BuyerTitleDocumentTypes.Contains, "УПД и УПДи формата 970 с функцией ДОП или СЧФДОП");
+
+            var file = XDocument.Load(new MemoryStream(await edoProvider.GetIncomingDocumentAsync(settings, documentId))).Root!;
+            var buyer = ReadLegalPerson(file.Element("Документ")!.Element("СвСчФакт")!, "СвПокуп");
+            var document = new EdoBuyerUniversalTransferDocument
+            {
+                DocumentId = documentId,
+                DocumentCreator = buyer,
+                AcceptanceInfo = new() { OperationName = "Товары приняты без претензий", Date = DateTime.UtcNow.Date },
+                Signers = [new() { JobTitle = "Директор", AuthorityConfirmationType = EdoAuthorityConfirmationType.ElectronicSignatureData, Person = GetCertificateOwner() }]
+            };
+
+            // Act
+            var result = await edoProvider.ReceiptUniversalTransferDocumentAsync(settings, document);
+
+            // Assert
+            TestContext.Out.WriteLine(result);
+            TestContext.Out.WriteLine(result.Content);
+            var awaitingAfterTitle = await GetDocumentsAwaitingBuyerTitleAsync(edoProvider, settings);
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.Id, Is.Not.Empty);
+                Assert.That(awaitingAfterTitle.Items.SelectMany(x => x.Documents).Select(x => x.Id), Does.Not.Contain(documentId));
+            });
         }
     }
 }

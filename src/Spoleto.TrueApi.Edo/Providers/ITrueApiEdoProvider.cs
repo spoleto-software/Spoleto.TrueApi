@@ -224,5 +224,32 @@ namespace Spoleto.TrueApi.Edo.Providers
         /// <param name="isDraft">Загрузить без подписи как черновик, не отправляя получателю.</param>
         /// <returns>Идентификатор документа в «ЭДО Лайт» и отправленный файл.</returns>
         Task<EdoPostDocumentResult> PostUniversalTransferDocumentAsync(TrueApiEdoProviderOption settings, EdoSellerUniversalTransferDocument document, bool isDraft = false);
+
+        /// <summary>
+        /// Отправка информации покупателя (титула покупателя) к входящему УПД / УПДи формата 970: формирование XML, подпись и загрузка в «ЭДО Лайт».
+        /// </summary>
+        /// <remarks>
+        /// Скачивает файл продавца <see cref="EdoBuyerUniversalTransferDocument.DocumentId"/>, как <see cref="GetIncomingSellerDocumentInfoAsync"/>:
+        /// из него берутся реквизиты документа, подпись продавца, отправитель и получатель, а по наличию исправления выбирается метод для УПД или УПДи.
+        /// Файл подписывается сертификатом <see cref="TrueApiEdoProviderOption.CertificateThumbprint"/> и сразу уходит продавцу.
+        /// </remarks>
+        /// <param name="settings">Настройки провайдера.</param>
+        /// <param name="document">Информация покупателя.</param>
+        /// <returns>Идентификатор, который вернул «ЭДО Лайт», и отправленный файл.</returns>
+        EdoPostDocumentResult ReceiptUniversalTransferDocument(TrueApiEdoProviderOption settings, EdoBuyerUniversalTransferDocument document)
+            => ReceiptUniversalTransferDocumentAsync(settings, document).GetAwaiter().GetResult();
+
+        /// <summary>
+        /// Отправка информации покупателя (титула покупателя) к входящему УПД / УПДи формата 970: формирование XML, подпись и загрузка в «ЭДО Лайт».
+        /// </summary>
+        /// <remarks>
+        /// Скачивает файл продавца <see cref="EdoBuyerUniversalTransferDocument.DocumentId"/>, как <see cref="GetIncomingSellerDocumentInfoAsync"/>:
+        /// из него берутся реквизиты документа, подпись продавца, отправитель и получатель, а по наличию исправления выбирается метод для УПД или УПДи.
+        /// Файл подписывается сертификатом <see cref="TrueApiEdoProviderOption.CertificateThumbprint"/> и сразу уходит продавцу.
+        /// </remarks>
+        /// <param name="settings">Настройки провайдера.</param>
+        /// <param name="document">Информация покупателя.</param>
+        /// <returns>Идентификатор, который вернул «ЭДО Лайт», и отправленный файл.</returns>
+        Task<EdoPostDocumentResult> ReceiptUniversalTransferDocumentAsync(TrueApiEdoProviderOption settings, EdoBuyerUniversalTransferDocument document);
     }
 }

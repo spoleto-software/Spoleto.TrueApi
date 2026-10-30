@@ -7,12 +7,13 @@ using Spoleto.TrueApi.Edo.Models.Upd;
 namespace Spoleto.TrueApi.Edo.Helpers
 {
     /// <summary>
-    /// Формирование файла информации продавца УПД / УПДи формата 970 (версия 5.03).
+    /// Формирование файлов информации продавца и покупателя УПД / УПДи формата 970 (версия 5.03).
     /// </summary>
     /// <remarks>
     /// Порядок элементов, форматы чисел и дат повторяют генератор CIS.EDM.CRPT (XmlHelperV5_03), по которому документы уже отправлялись.
+    /// Информация покупателя - в EdoUniversalTransferDocumentXmlHelper.Buyer.cs.
     /// </remarks>
-    internal static class EdoUniversalTransferDocumentXmlHelper
+    internal static partial class EdoUniversalTransferDocumentXmlHelper
     {
         private const string FileIdPrefix = "ON_NSCHFDOPPR";
         private const string FormatVersion = "5.03";
@@ -60,13 +61,18 @@ namespace Spoleto.TrueApi.Edo.Helpers
         {
             Validate(document);
 
+            return CreateFile(fileId, document.ApplicationCreator, CreateDocument(document));
+        }
+
+        private static string CreateFile(string fileId, string applicationCreator, XElement document)
+        {
             var xml = new XDocument(
                 new XDeclaration("1.0", "windows-1251", null),
                 new XElement("Файл",
                     new XAttribute("ИдФайл", fileId),
                     new XAttribute("ВерсФорм", FormatVersion),
-                    new XAttribute("ВерсПрог", document.ApplicationCreator),
-                    CreateDocument(document)));
+                    new XAttribute("ВерсПрог", applicationCreator),
+                    document));
 
             return xml.Declaration + Environment.NewLine + xml;
         }
@@ -592,7 +598,7 @@ namespace Spoleto.TrueApi.Edo.Helpers
                 : TextElement("НаимОИВ", creator.AuthorityShortName));
 
         /// <summary>
-        /// Информационное поле факта хозяйственной жизни 1 или 3.
+        /// Информационное поле факта хозяйственной жизни 1, 3 или 4.
         /// </summary>
         private static XElement? CreateOtherEconomicInfo(string elementName, EdoOtherEconomicInfo? info)
             => info == null

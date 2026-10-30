@@ -3,7 +3,7 @@
 namespace Spoleto.TrueApi.Edo.Models.Upd
 {
     /// <summary>
-    /// Лицо, подписывающее файл информации продавца (Подписант).
+    /// Лицо, подписывающее файл информации продавца или покупателя (Подписант).
     /// </summary>
     public record EdoSigner
     {

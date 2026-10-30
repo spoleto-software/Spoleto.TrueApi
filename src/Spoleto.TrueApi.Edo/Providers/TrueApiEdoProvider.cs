@@ -160,11 +160,18 @@ namespace Spoleto.TrueApi.Edo.Providers
 
         private const string OutgoingDocumentsPath = "/api/v3/true-api/elk/outgoing-documents";
 
-        // Подписание исходящих документов - в разделе edo, а списки и файлы - в elk.
+        // Подписание исходящих документов и титул покупателя - в разделе edo, а списки и файлы - в elk.
         private const string EdoOutgoingDocumentsPath = "/api/v3/true-api/edo/outgoing-documents";
+
+        private const string EdoIncomingDocumentsPath = "/api/v3/true-api/edo/incoming-documents";
 
         // Загрузка УПДи - отдельный метод.
         private const string UpdiPath = "/xml/updi";
+
+        // Титул покупателя к УПД и к УПДи - разные методы.
+        private const string UpdTitlePath = "/xml/upd/title/970";
+
+        private const string UpdiTitlePath = "/xml/updi/title/970";
 
         private const string Base64ContentEncoding = "base64";
 
@@ -238,15 +245,21 @@ namespace Spoleto.TrueApi.Edo.Providers
         }
 
         /// <summary>
-        /// Тело загрузки файла: файл в поле content и, если документ не черновик, подпись в поле signature.
+        /// Тело загрузки файла: файл в поле content, для титула покупателя - идентификатор документа продавца в поле doc_id
+        /// и, если документ не черновик, подпись в поле signature.
         /// </summary>
-        private static MultipartFormDataContent CreateDocumentContent(string fileId, byte[] rawContent, string? signature)
+        private static MultipartFormDataContent CreateDocumentContent(string fileId, byte[] rawContent, string? signature, string? documentId = null)
         {
             var fileContent = new ByteArrayContent(rawContent);
             fileContent.Headers.ContentType = new MediaTypeHeaderValue(XmlMediaType);
             fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data") { Name = "\"content\"", FileName = $"\"{fileId}.xml\"" };
 
             var content = new MultipartFormDataContent { fileContent };
+            if (documentId != null)
+            {
+                content.Add(new StringContent(documentId, Encoding.UTF8, ContentTypes.TextPlain), "doc_id");
+            }
+
             if (signature != null)
             {
                 content.Add(CreateSignatureContent(signature), "signature");
@@ -323,6 +336,43 @@ namespace Spoleto.TrueApi.Edo.Providers
             return new EdoPostDocumentResult
             {
                 Id = result.Id,
+                FileId = fileId,
+                Content = content,
+                RawContent = rawContent
+            };
+        }
+
+        /// <inheritdoc />
+        public async Task<EdoPostDocumentResult> ReceiptUniversalTransferDocumentAsync(TrueApiEdoProviderOption settings, EdoBuyerUniversalTransferDocument document)
+        {
+            ArgumentNullException.ThrowIfNull(document);
+            ArgumentException.ThrowIfNullOrEmpty(document.DocumentId);
+
+            // Информация покупателя повторяет реквизиты и подпись файла продавца, а её имя - участников и признаки из имени файла продавца.
+            var sellerDocumentInfo = await GetIncomingSellerDocumentInfoAsync(settings, document.DocumentId).ConfigureAwait(false);
+
+            var fileId = string.IsNullOrEmpty(document.FileId) ? EdoUniversalTransferDocumentXmlHelper.GetFileId(document, sellerDocumentInfo) : document.FileId;
+            var content = EdoUniversalTransferDocumentXmlHelper.CreateXml(document, sellerDocumentInfo, fileId);
+            var rawContent = EdoUniversalTransferDocumentXmlHelper.FileEncoding.GetBytes(content);
+
+            // Титул покупателя загружается только с подписью: черновиков у него нет.
+            var signature = SignDetached(settings, rawContent);
+
+            var path = EdoIncomingDocumentsPath + (sellerDocumentInfo.IsUPDi ? UpdiTitlePath : UpdTitlePath);
+            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, path));
+
+            var result = await InvokeAsync<EdoIdResult>(settings, HttpMethod.Post, uri, () => CreateDocumentContent(fileId, rawContent, signature, document.DocumentId)).ConfigureAwait(false);
+
+            // Описание метода 9.2.9 обещает event_id, а тестовый стенд 29.10.2026 вернул только id.
+            var id = result?.EventId ?? result?.Id;
+            if (string.IsNullOrEmpty(id))
+            {
+                throw new InvalidDataException($"«ЭДО Лайт» не вернул идентификатор загруженного титула покупателя {fileId}.");
+            }
+
+            return new EdoPostDocumentResult
+            {
+                Id = id,
                 FileId = fileId,
                 Content = content,
                 RawContent = rawContent
