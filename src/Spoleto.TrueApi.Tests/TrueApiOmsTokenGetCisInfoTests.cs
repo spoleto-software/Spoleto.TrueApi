@@ -16,6 +16,11 @@ namespace Spoleto.TrueApi.Tests
     public class TrueApiOmsTokenGetCisInfoTests
     {
         /// <summary>
+        /// Проверка учетных данных УОТ не пройдена: так СУЗ отвечает на выдуманный токен.
+        /// </summary>
+        private const int CredentialsCheckFailedErrorCode = 1090;
+
+        /// <summary>
         /// Маркер безопасности не найден.
         /// </summary>
         private const int TokenNotFoundErrorCode = 1100;
@@ -162,7 +167,7 @@ namespace Spoleto.TrueApi.Tests
             /// СУЗ отклонила токен: ответ 401 или 403, или ошибка токена в «globalErrors».
             /// </summary>
             public bool IsTokenRejected => StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
-                || HasErrorCode(TokenNotFoundErrorCode) || HasErrorCode(TokenExpiredErrorCode);
+                || HasErrorCode(CredentialsCheckFailedErrorCode) || HasErrorCode(TokenNotFoundErrorCode) || HasErrorCode(TokenExpiredErrorCode);
 
             /// <summary>
             /// Ошибка с кодом в «globalErrors» - там, где её ищет OmsProvider.
