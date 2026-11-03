@@ -1,14 +1,14 @@
 ﻿using System.Text.Json.Serialization;
 
-namespace Spoleto.TrueApi.Edo.Models
+namespace Spoleto.TrueApi.Auth.Models
 {
     /// <summary>
-    /// Ответ сервиса с ошибкой.
+    /// Ответ сервиса с ошибкой: из него <see cref="Clients.TrueApiRestClient"/> берёт текст исключения.
     /// </summary>
     /// <remarks>
     /// Поле «code» не читается: в ответах встречается и строкой, и числом.
     /// </remarks>
-    internal record EdoErrorModel
+    internal record TrueApiErrorModel
     {
         /// <summary>
         /// Сообщение об ошибке.
@@ -26,7 +26,7 @@ namespace Spoleto.TrueApi.Edo.Models
         /// Ошибки.
         /// </summary>
         [JsonPropertyName("errors")]
-        public List<EdoErrorModel>? Errors { get; set; }
+        public List<TrueApiErrorModel>? Errors { get; set; }
 
         public override string? ToString()
         {

@@ -1,6 +1,8 @@
 ﻿using CIS.Cryptography;
 using Spoleto.Common;
 using Spoleto.Common.Helpers;
+using Spoleto.RestClient;
+using Spoleto.TrueApi.Auth.Clients;
 using Spoleto.TrueApi.Auth.Extensions;
 using Spoleto.TrueApi.Auth.Helpers;
 using Spoleto.TrueApi.Auth.Models;
@@ -55,9 +57,11 @@ namespace Spoleto.TrueApi.Auth.Providers
                 return _token;
             }
 
-            var client = _httpClient;
+            // Запросы самого токена идут без токена: у клиента нет аутентификатора.
+            using var restClient = new TrueApiRestClient(_httpClient);
 
-            var authKey = await GetAuthKey(client, settings).ConfigureAwait(false);
+            var keyUri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, "/api/v3/true-api/auth/key"));
+            var authKey = await InvokeAsync<AuthKeyModel>(restClient, TrueApiRestClient.CreateRequest(RestHttpMethod.Get, keyUri)).ConfigureAwait(false);
 
             var data = Convert.ToBase64String(DefaultSettings.Encoding.GetBytes(authKey.Data));
             var requestModel = new TokenRequest
@@ -68,86 +72,23 @@ namespace Spoleto.TrueApi.Auth.Providers
                 UnitedToken = settings.UnitedToken
             };
 
-            var requestModelJson = JsonHelper.ToJson(requestModel);
+            var requestContent = new StringContent(JsonHelper.ToJson(requestModel), DefaultSettings.Encoding, DefaultSettings.ContentType);
+            var signInUri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, "/api/v3/true-api/auth/simpleSignIn"));
+            _token = await InvokeAsync<UnitedTokenModel>(restClient, TrueApiRestClient.CreateRequest(RestHttpMethod.Post, signInUri, requestContent)).ConfigureAwait(false);
 
-            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, "/api/v3/true-api/auth/simpleSignIn"));
-            using (var requestMessage = new HttpRequestMessage(HttpMethod.Post, uri))
-            {
-                requestMessage.ConfigureRequestMessage();
-
-                requestMessage.Content = new StringContent(requestModelJson, DefaultSettings.Encoding, DefaultSettings.ContentType);
-                using (var responseMessage = await client.SendAsync(requestMessage).ConfigureAwait(false))
-                {
-                    var result = await responseMessage.Content.ReadAsStringAsync().ConfigureAwait(false);
-                    if (responseMessage.IsSuccessStatusCode)
-                    {
-                        try
-                        {
-                            _token = JsonHelper.FromJson<UnitedTokenModel>(result);
-                        }
-                        catch (Exception e)
-                        {
-                            throw new Exception($"Ошибка формирования токена доступа\n{result}");
-                        }
-
-                        return _token;
-                    }
-                    else if (!string.IsNullOrEmpty(result))
-                    {
-                        ErrorModel errorModel = null;
-                        try
-                        {
-                            errorModel = JsonHelper.FromJson<ErrorModel>(result);
-                        }
-                        catch (Exception e)
-                        {
-                            errorModel = new ErrorModel { ErrorMessage = result };
-                        }
-
-                        throw new Exception(errorModel.ErrorMessage);
-                    }
-                    else
-                    {
-                        throw new Exception(responseMessage.ReasonPhrase);
-                    }
-                }
-            }
+            return _token;
         }
 
-        private async Task<AuthKeyModel> GetAuthKey(HttpClient client, TrueApiTokenProviderOption settings)
+        private static async Task<T> InvokeAsync<T>(TrueApiRestClient restClient, RestRequest request)
         {
-            var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, "/api/v3/true-api/auth/key"));
-            using (var requestMessage = new HttpRequestMessage(HttpMethod.Get, uri))
+            var response = await restClient.ExecuteAsStringAsync(request).ConfigureAwait(false);
+            try
             {
-                requestMessage.ConfigureRequestMessage();
-
-                using (var responseMessage = await client.SendAsync(requestMessage).ConfigureAwait(false))
-                {
-                    var result = await responseMessage.Content.ReadAsStringAsync().ConfigureAwait(false);
-                    if (responseMessage.IsSuccessStatusCode)
-                    {
-                        AuthKeyModel tokenModel = null;
-                        try
-                        {
-                            tokenModel = JsonHelper.FromJson<AuthKeyModel>(result);
-                        }
-                        catch (Exception e)
-                        {
-                            throw new Exception($"Ошибка формирования токена доступа\n{result}");
-                        }
-
-                        return tokenModel;
-                    }
-                    else if (!string.IsNullOrEmpty(result))
-                    {
-                        throw new Exception(result);
-                    }
-                    else
-                    {
-
-                        throw new Exception(responseMessage.ReasonPhrase);
-                    }
-                }
+                return JsonHelper.FromJson<T>(response.Content);
+            }
+            catch (Exception e)
+            {
+                throw new Exception($"Ошибка формирования токена доступа\n{response.Content}", e);
             }
         }
 

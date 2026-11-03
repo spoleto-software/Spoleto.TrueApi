@@ -1,12 +1,11 @@
 ﻿using System.IO.Compression;
-using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using CIS.Cryptography;
-using Spoleto.Common;
 using Spoleto.Common.Helpers;
-using Spoleto.TrueApi.Auth.Models;
+using Spoleto.RestClient;
+using Spoleto.TrueApi.Auth.Clients;
 using Spoleto.TrueApi.Auth.Providers;
 using Spoleto.TrueApi.Edo.Exceptions;
 using Spoleto.TrueApi.Edo.Extensions;
@@ -65,80 +64,30 @@ namespace Spoleto.TrueApi.Edo.Providers
         }
         #endregion
 
-        private Task<UnitedTokenModel> GetTokenAsync(TrueApiEdoProviderOption settings) => _tokenProvider.GetTokenAsync(new(settings.ServiceUrl, settings.CertificateThumbprint, settings.Inn, true));
-
-        private async Task<HttpResponseMessage> SendWithTokenAsync(TrueApiEdoProviderOption settings, HttpMethod method, Uri uri, bool isFileResponse, Func<HttpContent>? createContent)
-        {
-            using var requestMessage = new HttpRequestMessage(method, uri);
-            requestMessage.ConfigureRequestMessage(isFileResponse);
-            requestMessage.Content = createContent?.Invoke();
-
-            var token = await GetTokenAsync(settings).ConfigureAwait(false);
-            requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.UuidToken);
-
-            return await _httpClient.SendAsync(requestMessage).ConfigureAwait(false);
-        }
-
         /// <summary>
-        /// Отправка запроса. Возвращает только успешный ответ, иначе исключение с текстом ошибки сервиса.
+        /// Клиент на вызов: токен берётся по настройкам вызова. Ошибки и повтор запроса после 401 - в <see cref="TrueApiRestClient"/>.
         /// </summary>
-        /// <param name="createContent">Тело запроса. Создаётся на каждую попытку заново: отправленный запрос освобождает своё тело.</param>
-        private async Task<HttpResponseMessage> SendAsync(TrueApiEdoProviderOption settings, HttpMethod method, Uri uri, bool isFileResponse = false, Func<HttpContent>? createContent = null)
+        private TrueApiRestClient CreateRestClient(TrueApiEdoProviderOption settings)
+            => new(_httpClient, new TrueApiAuthenticator(_tokenProvider, new(settings.ServiceUrl, settings.CertificateThumbprint, settings.Inn, true)));
+
+        private async Task<string> ExecuteAsStringAsync(TrueApiEdoProviderOption settings, RestRequest request)
         {
-            var responseMessage = await SendWithTokenAsync(settings, method, uri, isFileResponse, createContent).ConfigureAwait(false);
+            using var restClient = CreateRestClient(settings);
+            var response = await restClient.ExecuteAsStringAsync(request).ConfigureAwait(false);
 
-            if (responseMessage.StatusCode == HttpStatusCode.Unauthorized)
-            {
-                // Токен истёк или аннулирован: запрашиваем новый один раз. Повторный 401 - уже не токен, отдаём ошибку.
-                responseMessage.Dispose();
-                _tokenProvider.SetTokenExpired();
-                responseMessage = await SendWithTokenAsync(settings, method, uri, isFileResponse, createContent).ConfigureAwait(false);
-            }
-
-            if (responseMessage.IsSuccessStatusCode)
-            {
-                return responseMessage;
-            }
-
-            using (responseMessage)
-            {
-                throw await CreateExceptionAsync(responseMessage).ConfigureAwait(false);
-            }
+            return response.Content;
         }
 
-        private static async Task<HttpRequestException> CreateExceptionAsync(HttpResponseMessage responseMessage)
+        private async Task<BinaryRestResponse> ExecuteAsBytesAsync(TrueApiEdoProviderOption settings, RestRequest request)
         {
-            var errorResult = await responseMessage.Content.ReadAsStringAsync().ConfigureAwait(false);
+            using var restClient = CreateRestClient(settings);
 
-            var message = errorResult;
-            if (string.IsNullOrEmpty(errorResult))
-            {
-                message = responseMessage.ReasonPhrase;
-            }
-            else if (responseMessage.Content.Headers.ContentType?.MediaType == ContentTypes.ApplicationJson)
-            {
-                try
-                {
-                    var errorModel = JsonHelper.FromJson<EdoErrorModel>(errorResult);
-                    var errorMessage = errorModel?.ToString();
-                    if (!string.IsNullOrEmpty(errorMessage))
-                    {
-                        message = errorMessage;
-                    }
-                }
-                catch (JsonException)
-                {
-                }
-            }
-
-            return new HttpRequestException(message, null, responseMessage.StatusCode);
+            return await restClient.ExecuteAsBytesAsync(request).ConfigureAwait(false);
         }
 
-        private async Task<T> InvokeAsync<T>(TrueApiEdoProviderOption settings, HttpMethod method, Uri uri, Func<HttpContent>? createContent = null)
+        private async Task<T> InvokeAsync<T>(TrueApiEdoProviderOption settings, RestHttpMethod method, Uri uri, HttpContent? content = null)
         {
-            using var responseMessage = await SendAsync(settings, method, uri, createContent: createContent).ConfigureAwait(false);
-
-            var result = await responseMessage.Content.ReadAsStringAsync().ConfigureAwait(false);
+            var result = await ExecuteAsStringAsync(settings, TrueApiRestClient.CreateRequest(method, uri, content)).ConfigureAwait(false);
             try
             {
                 return JsonHelper.FromJson<T>(result)!;
@@ -149,11 +98,11 @@ namespace Spoleto.TrueApi.Edo.Providers
             }
         }
 
-        private async Task<byte[]> InvokeFileAsync(TrueApiEdoProviderOption settings, HttpMethod method, Uri uri)
+        private async Task<byte[]> InvokeFileAsync(TrueApiEdoProviderOption settings, RestHttpMethod method, Uri uri)
         {
-            using var responseMessage = await SendAsync(settings, method, uri, isFileResponse: true).ConfigureAwait(false);
+            var response = await ExecuteAsBytesAsync(settings, TrueApiRestClient.CreateRequest(method, uri, isFileResponse: true)).ConfigureAwait(false);
 
-            return await responseMessage.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+            return response.Content;
         }
 
         private const string IncomingDocumentsPath = "/api/v3/true-api/elk/incoming-documents";
@@ -177,6 +126,8 @@ namespace Spoleto.TrueApi.Edo.Providers
 
         private const string XmlMediaType = "text/xml";
 
+        private const string ContentDispositionHeaderName = "Content-Disposition";
+
         private async Task<EdoDocumentCollection> GetDocumentListAsync(TrueApiEdoProviderOption settings, string documentsPath, EdoDocumentSearchModel? searchModel)
         {
             var path = documentsPath;
@@ -191,7 +142,7 @@ namespace Spoleto.TrueApi.Edo.Providers
 
             var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, path));
 
-            return await InvokeAsync<EdoDocumentCollection>(settings, HttpMethod.Get, uri).ConfigureAwait(false);
+            return await InvokeAsync<EdoDocumentCollection>(settings, RestHttpMethod.Get, uri).ConfigureAwait(false);
         }
 
         private async Task<byte[]> GetDocumentAsync(TrueApiEdoProviderOption settings, string documentsPath, string documentId)
@@ -200,7 +151,7 @@ namespace Spoleto.TrueApi.Edo.Providers
 
             var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"{documentsPath}/{Uri.EscapeDataString(documentId)}/content"));
 
-            return await InvokeFileAsync(settings, HttpMethod.Get, uri).ConfigureAwait(false);
+            return await InvokeFileAsync(settings, RestHttpMethod.Get, uri).ConfigureAwait(false);
         }
 
         private async Task<EdoSignedDocumentInfo> GetSignedDocumentInfoAsync(TrueApiEdoProviderOption settings, string documentsPath, string documentId)
@@ -209,13 +160,17 @@ namespace Spoleto.TrueApi.Edo.Providers
 
             var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"{documentsPath}/{Uri.EscapeDataString(documentId)}"));
 
-            using var responseMessage = await SendAsync(settings, HttpMethod.Get, uri, isFileResponse: true).ConfigureAwait(false);
+            var response = await ExecuteAsBytesAsync(settings, TrueApiRestClient.CreateRequest(RestHttpMethod.Get, uri, isFileResponse: true)).ConfigureAwait(false);
 
-            var contentDisposition = responseMessage.Content.Headers.ContentDisposition;
+            ContentDispositionHeaderValue? contentDisposition = null;
+            if (response.Headers.TryGetValue(ContentDispositionHeaderName, out var values))
+            {
+                ContentDispositionHeaderValue.TryParse(values.FirstOrDefault(), out contentDisposition);
+            }
+
             var archiveFileName = contentDisposition?.FileNameStar ?? contentDisposition?.FileName?.Trim('"');
 
-            var archiveBytes = await responseMessage.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
-            using var archive = new ZipArchive(new MemoryStream(archiveBytes), ZipArchiveMode.Read);
+            using var archive = new ZipArchive(new MemoryStream(response.Content), ZipArchiveMode.Read);
 
             return EdoArchiveHelper.ReadSignedDocument(archive, archiveFileName);
         }
@@ -309,7 +264,7 @@ namespace Spoleto.TrueApi.Edo.Providers
 
             var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"{EdoOutgoingDocumentsPath}/{Uri.EscapeDataString(documentId)}/signature"));
 
-            using var responseMessage = await SendAsync(settings, HttpMethod.Post, uri, createContent: () => CreateSignatureContent(signature)).ConfigureAwait(false);
+            await ExecuteAsStringAsync(settings, TrueApiRestClient.CreateRequest(RestHttpMethod.Post, uri, CreateSignatureContent(signature))).ConfigureAwait(false);
         }
 
         /// <inheritdoc />
@@ -327,7 +282,7 @@ namespace Spoleto.TrueApi.Edo.Providers
             var path = document.IsUPDi ? EdoOutgoingDocumentsPath + UpdiPath : EdoOutgoingDocumentsPath;
             var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, path));
 
-            var result = await InvokeAsync<EdoIdResult>(settings, HttpMethod.Post, uri, () => CreateDocumentContent(fileId, rawContent, signature)).ConfigureAwait(false);
+            var result = await InvokeAsync<EdoIdResult>(settings, RestHttpMethod.Post, uri, CreateDocumentContent(fileId, rawContent, signature)).ConfigureAwait(false);
             if (string.IsNullOrEmpty(result?.Id))
             {
                 throw new InvalidDataException($"«ЭДО Лайт» не вернул идентификатор загруженного файла {fileId}.");
@@ -361,7 +316,7 @@ namespace Spoleto.TrueApi.Edo.Providers
             var path = EdoIncomingDocumentsPath + (sellerDocumentInfo.IsUPDi ? UpdiTitlePath : UpdTitlePath);
             var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, path));
 
-            var result = await InvokeAsync<EdoIdResult>(settings, HttpMethod.Post, uri, () => CreateDocumentContent(fileId, rawContent, signature, document.DocumentId)).ConfigureAwait(false);
+            var result = await InvokeAsync<EdoIdResult>(settings, RestHttpMethod.Post, uri, CreateDocumentContent(fileId, rawContent, signature, document.DocumentId)).ConfigureAwait(false);
 
             // Описание метода 9.2.9 обещает event_id, а тестовый стенд 29.10.2026 вернул только id.
             var id = result?.EventId ?? result?.Id;

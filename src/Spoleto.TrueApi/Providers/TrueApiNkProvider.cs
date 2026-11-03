@@ -2,6 +2,8 @@
 using System.Text.Json;
 using Spoleto.Common;
 using Spoleto.Common.Helpers;
+using Spoleto.RestClient;
+using Spoleto.TrueApi.Auth.Clients;
 using Spoleto.TrueApi.Exceptions;
 
 namespace Spoleto.TrueApi
@@ -26,53 +28,42 @@ namespace Spoleto.TrueApi
         }
 
         private Task<T> InvokeGetAsync<T>(Uri uri)
-            => InvokeAsync<T>(uri, HttpMethod.Get, null);
+            => InvokeAsync<T>(uri, RestHttpMethod.Get, null);
 
-        private async Task<T> InvokeAsync<T>(Uri uri, HttpMethod method, string requestJsonContent = null)
+        /// <summary>
+        /// Запрос к Национальному каталогу: ключ API - в строке запроса, токен не нужен. Ошибки - в <see cref="TrueApiRestClient"/>.
+        /// </summary>
+        private async Task<T> InvokeAsync<T>(Uri uri, RestHttpMethod method, string requestJsonContent = null)
         {
-            var client = _httpClient;
+            using var restClient = new TrueApiRestClient(_httpClient);
 
-            using var requestMessage = new HttpRequestMessage(method, uri);
-            requestMessage.ConfigureRequestMessage();
-            if (requestJsonContent != null)
+            var content = requestJsonContent == null ? null : new StringContent(requestJsonContent, DefaultSettings.Encoding, DefaultSettings.ContentType);
+
+            TextRestResponse response;
+            try
             {
-                requestMessage.Content = new StringContent(requestJsonContent, DefaultSettings.Encoding, DefaultSettings.ContentType);
+                response = await restClient.ExecuteAsStringAsync(TrueApiRestClient.CreateRequest(method, uri, content)).ConfigureAwait(false);
+            }
+            catch (HttpRequestException ex) when (ex.Data.Contains(RequestUriDataKey))
+            {
+                // Клиент кладёт в исключение полный адрес, а в строке запроса - ключ API: оставляем адрес без неё.
+                ex.Data[RequestUriDataKey] = new Uri(uri.GetLeftPart(UriPartial.Path));
+                throw;
             }
 
-            using var responseMessage = await client.SendAsync(requestMessage).ConfigureAwait(false);
-
-            var result = await responseMessage.Content.ReadAsStringAsync().ConfigureAwait(false);
-            if (responseMessage.IsSuccessStatusCode)
+            var result = response.Content;
+            try
             {
-                try
-                {
-                    var nkContainer = JsonHelper.FromJson<T>(result);
-                    return nkContainer;
-                }
-                catch (JsonException ex)
-                {
-                    throw new JsonParsingException(result, ex);
-                }
+                var nkContainer = JsonHelper.FromJson<T>(result);
+                return nkContainer;
             }
-
-            else if (!String.IsNullOrEmpty(result))
+            catch (JsonException ex)
             {
-                if (responseMessage.Content.Headers.ContentType.MediaType == ContentTypes.ApplicationJson)
-                {
-                    var errorModel = JsonHelper.FromJson<ErrorModel>(result);
-
-                    throw new Exception(errorModel.ErrorMessage);
-                }
-                else
-                {
-                    throw new Exception(result);
-                }
-            }
-            else
-            {
-                throw new Exception(responseMessage.ReasonPhrase);
+                throw new JsonParsingException(result, ex);
             }
         }
+
+        private const string RequestUriDataKey = "RequestUri";
 
         #region IDisposable
         bool _disposed;
@@ -194,7 +185,7 @@ namespace Spoleto.TrueApi
 
             var feedModelJson = JsonHelper.ToJson(feedModel);
 
-            return await InvokeAsync<NkContainerModel<NkFeedResultModel>>(uri, HttpMethod.Post, feedModelJson).ConfigureAwait(false);
+            return await InvokeAsync<NkContainerModel<NkFeedResultModel>>(uri, RestHttpMethod.Post, feedModelJson).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -295,7 +286,7 @@ namespace Spoleto.TrueApi
 
             var searchInfoModelJson = JsonHelper.ToJson(searchInfoModel);
 
-            return await InvokeAsync<NkContainerListModel<NkCheckProductInfoModel>>(uri, HttpMethod.Post, searchInfoModelJson).ConfigureAwait(false);
+            return await InvokeAsync<NkContainerListModel<NkCheckProductInfoModel>>(uri, RestHttpMethod.Post, searchInfoModelJson).ConfigureAwait(false);
         }
 
         public async Task<NkContainerModel<NkFeedProductDocumentModel>> GetFeedProductDocumentListAsync(TrueApiNkProviderOption settings, NkFeedProductDocumentSearchModel searchModel)
@@ -315,7 +306,7 @@ namespace Spoleto.TrueApi
                 var model = new NkFeedProductDocumentSearchModel { GoodIds = goodIds, Gtins = gtins, PublicationAgreement = searchModel.PublicationAgreement };
                 var modelJson = JsonHelper.ToJson(model);
 
-                var result = await InvokeAsync<NkContainerModel<NkFeedProductDocumentModel>>(uri, HttpMethod.Post, modelJson).ConfigureAwait(false);
+                var result = await InvokeAsync<NkContainerModel<NkFeedProductDocumentModel>>(uri, RestHttpMethod.Post, modelJson).ConfigureAwait(false);
                 if (result?.Result?.GoodXmls?.Count > 0)
                     goodInfoIds.AddRange(result.Result.GoodXmls);
 
@@ -347,7 +338,7 @@ namespace Spoleto.TrueApi
                 var batch = requestModel.Skip(i).Take(batchSize).ToList();
                 var modelJson = JsonHelper.ToJson(batch);
 
-                var result = await InvokeAsync<NkContainerModel<NkFeedProductSignModel>>(uri, HttpMethod.Post, modelJson).ConfigureAwait(false);
+                var result = await InvokeAsync<NkContainerModel<NkFeedProductSignModel>>(uri, RestHttpMethod.Post, modelJson).ConfigureAwait(false);
                 if (result?.Result?.Signed?.Count > 0)
                     signed.AddRange(result.Result.Signed);
 

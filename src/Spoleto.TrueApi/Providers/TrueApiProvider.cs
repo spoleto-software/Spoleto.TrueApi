@@ -1,10 +1,10 @@
 ﻿using System.IO.Compression;
-using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Spoleto.Common;
 using Spoleto.Common.Helpers;
-using Spoleto.TrueApi.Auth.Models;
+using Spoleto.RestClient;
+using Spoleto.TrueApi.Auth.Clients;
 using Spoleto.TrueApi.Auth.Providers;
 using Spoleto.TrueApi.Documents;
 using Spoleto.TrueApi.Exceptions;
@@ -82,90 +82,40 @@ namespace Spoleto.TrueApi
             }
         }
 
-        private async Task InitHeaders(HttpRequestMessage requestMessage, TrueApiProviderOption settings)
-        {
-            requestMessage.ConfigureRequestMessage();
+        /// <summary>
+        /// Клиент на вызов: токен берётся по настройкам вызова. Ошибки и повтор запроса после 401 - в <see cref="TrueApiRestClient"/>.
+        /// </summary>
+        private TrueApiRestClient CreateRestClient(TrueApiProviderOption settings)
+            => new(_httpClient, new TrueApiAuthenticator(_tokenProvider, new(settings.ServiceUrl, settings.CertificateThumbprint, settings.Inn, true)));
 
-            var token = await GetTokenAsync(settings).ConfigureAwait(false);
-            requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.UuidToken);
-        }
-
-        private Task<UnitedTokenModel> GetTokenAsync(TrueApiProviderOption settings) => _tokenProvider.GetTokenAsync(new(settings.ServiceUrl, settings.CertificateThumbprint, settings.Inn, true));
-
-        private async Task<T> InvokeAsync<T>(TrueApiProviderOption settings, Uri uri, HttpMethod method, string requestJsonContent = null,
+        private async Task<T> InvokeAsync<T>(TrueApiProviderOption settings, Uri uri, RestHttpMethod method, string requestJsonContent = null,
             bool isZipResponse = false)
         {
-            var client = _httpClient;
+            using var restClient = CreateRestClient(settings);
 
-            using var requestMessage = new HttpRequestMessage(method, uri);
-            await InitHeaders(requestMessage, settings).ConfigureAwait(false);
-            if (requestJsonContent != null)
+            var content = requestJsonContent == null ? null : new StringContent(requestJsonContent, DefaultSettings.Encoding, DefaultSettings.ContentType);
+            var request = TrueApiRestClient.CreateRequest(method, uri, content);
+
+            if (isZipResponse)//todo: тест-тест-тест. Протестировать на самом ли деле приходит архив.
             {
-                requestMessage.Content = new StringContent(requestJsonContent, DefaultSettings.Encoding, DefaultSettings.ContentType);
-            }
+                var response = await restClient.ExecuteAsBytesAsync(request).ConfigureAwait(false);
 
-            using var responseMessage = await client.SendAsync(requestMessage).ConfigureAwait(false);
-
-            if (responseMessage.IsSuccessStatusCode)
-            {
-                if (isZipResponse)//todo: тест-тест-тест. Протестировать на самом ли деле приходит архив.
+                using var archive = new ZipArchive(new MemoryStream(response.Content));
+                var jsonFileEntry = archive.Entries.FirstOrDefault();
+                var objectResult = default(T);
+                if (jsonFileEntry != null)
                 {
-                    using var memoryStream = new MemoryStream();
-                    await responseMessage.Content.CopyToAsync(memoryStream).ConfigureAwait(false);
-                    memoryStream.Position = 0;
-
-                    using ZipArchive archive = new ZipArchive(memoryStream);
-                    var jsonFileEntry = archive.Entries.FirstOrDefault();
-                    var objectResult = default(T);
-                    if (jsonFileEntry != null)
-                    {
-                        using var zipFileEntryStream = jsonFileEntry.Open();
-                        objectResult = await JsonHelper.FromJsonStreamAsync<T>(zipFileEntryStream).ConfigureAwait(false);
-                    }
-
-                    return objectResult;
+                    using var zipFileEntryStream = jsonFileEntry.Open();
+                    objectResult = await JsonHelper.FromJsonStreamAsync<T>(zipFileEntryStream).ConfigureAwait(false);
                 }
-                else
-                {
-                    string result = await responseMessage.Content.ReadAsStringAsync().ConfigureAwait(false);
-                    var objectResult = FromResult<T>(result);
-                    return objectResult;
-                }
-            }
 
-            var errorResult = await responseMessage.Content.ReadAsStringAsync().ConfigureAwait(false);
-
-            if (!String.IsNullOrEmpty(errorResult))
-            {
-                if (responseMessage.Content.Headers.ContentType.MediaType == ContentTypes.ApplicationJson)
-                {
-                    try
-                    {
-                        var errorModel = JsonHelper.FromJson<ErrorModel>(errorResult);
-
-                        //todo: Будет ли тут кейс с истекшим токеном? Какая тогда будет ошибка?
-                        if (responseMessage.StatusCode == System.Net.HttpStatusCode.Unauthorized
-                            && errorModel?.ErrorMessage == "unauthorized")//ExpiredToken Переданный токен не активен
-                        {
-                            _tokenProvider.SetTokenExpired();
-                            return await InvokeAsync<T>(settings, uri, method, requestJsonContent).ConfigureAwait(false);
-                        }
-
-                        throw new Exception(errorModel.ErrorMessage);
-                    }
-                    catch (JsonException)
-                    {
-                        throw new Exception(errorResult);
-                    }
-                }
-                else
-                {
-                    throw new Exception(errorResult);
-                }
+                return objectResult;
             }
             else
             {
-                throw new Exception(responseMessage.ReasonPhrase);
+                var response = await restClient.ExecuteAsStringAsync(request).ConfigureAwait(false);
+                var objectResult = FromResult<T>(response.Content);
+                return objectResult;
             }
         }
 
@@ -183,7 +133,7 @@ namespace Spoleto.TrueApi
 
             var documentInfoJson = JsonHelper.ToJson(documentInfo);
 
-            return await InvokeAsync<string>(settings, uri, HttpMethod.Post, documentInfoJson).ConfigureAwait(false);
+            return await InvokeAsync<string>(settings, uri, RestHttpMethod.Post, documentInfoJson).ConfigureAwait(false);
         }
 
         // /api/v4/true-api/doc/{docId}/info
@@ -205,7 +155,7 @@ namespace Spoleto.TrueApi
 
             var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, path));
 
-            return await InvokeAsync<List<DocumentInfoReportModel>>(settings, uri, HttpMethod.Get).ConfigureAwait(false);
+            return await InvokeAsync<List<DocumentInfoReportModel>>(settings, uri, RestHttpMethod.Get).ConfigureAwait(false);
         }
 
         // /api/v4/true-api/doc/{docId}/info
@@ -228,7 +178,7 @@ namespace Spoleto.TrueApi
             var url = settings.ServiceUrl.Replace("/v3/", "/v4/");
             var uri = new Uri(UriHelper.UrlCombine(url, path));
 
-            return await InvokeAsync<List<DocumentInfoReportModel<T>>>(settings, uri, HttpMethod.Get).ConfigureAwait(false);
+            return await InvokeAsync<List<DocumentInfoReportModel<T>>>(settings, uri, RestHttpMethod.Get).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -247,7 +197,7 @@ namespace Spoleto.TrueApi
 
             var cisOrderSearchInfoJson = JsonHelper.ToJson(cisOrderSearchInfo);
 
-            var result = await InvokeAsync<CisOrderSearchResultModel>(settings, uri, HttpMethod.Post, cisOrderSearchInfoJson).ConfigureAwait(false);
+            var result = await InvokeAsync<CisOrderSearchResultModel>(settings, uri, RestHttpMethod.Post, cisOrderSearchInfoJson).ConfigureAwait(false);
 
             return result?.Uuid;
         }
@@ -266,7 +216,7 @@ namespace Spoleto.TrueApi
         {
             var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/api/v3/true-api/cises/orders/{cisOrderUuid}/status"));
 
-            var result = await InvokeAsync<CisOrderStatus>(settings, uri, HttpMethod.Get).ConfigureAwait(false);
+            var result = await InvokeAsync<CisOrderStatus>(settings, uri, RestHttpMethod.Get).ConfigureAwait(false);
 
             return result;
         }
@@ -285,7 +235,7 @@ namespace Spoleto.TrueApi
         {
             var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/api/v3/true-api/cises/orders/{cisOrderUuid}/result"));
 
-            return await InvokeAsync<List<CisFullInfoModel>>(settings, uri, HttpMethod.Get, isZipResponse: true).ConfigureAwait(false);
+            return await InvokeAsync<List<CisFullInfoModel>>(settings, uri, RestHttpMethod.Get, isZipResponse: true).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -328,7 +278,7 @@ namespace Spoleto.TrueApi
             foreach (var codes in mcCodeList)
             {
                 var cisListJson = JsonHelper.ToJson(codes);
-                result.AddRange(await InvokeAsync<List<CisPublicInfoContainerModel>>(settings, uri, HttpMethod.Post, cisListJson).ConfigureAwait(false));
+                result.AddRange(await InvokeAsync<List<CisPublicInfoContainerModel>>(settings, uri, RestHttpMethod.Post, cisListJson).ConfigureAwait(false));
             }
             return result;
 
@@ -348,7 +298,7 @@ namespace Spoleto.TrueApi
         //{
         //    var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/api/v3/true-api/cises/list?{string.Join("&", cisList.Select(x => "values=" + System.Web.HttpUtility.UrlEncode(x)))}"));
 
-        //    return await InvokeAsync<List<CisInfoModel>>(settings, uri, HttpMethod.Post).ConfigureAwait(false);
+        //    return await InvokeAsync<List<CisInfoModel>>(settings, uri, RestHttpMethod.Post).ConfigureAwait(false);
         //}
 
         // obsolete
@@ -367,7 +317,7 @@ namespace Spoleto.TrueApi
             //settings.ServiceUrl.Replace("/v3/", "/v4/")
             var searchInfoModelJson = JsonHelper.ToJson(searchCisList.ToArray());
             var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/api/v3/true-api/cises/short/list"));
-            return await InvokeAsync<List<CisShortInfoContainerModel>>(settings, uri, HttpMethod.Post, searchInfoModelJson).ConfigureAwait(false);
+            return await InvokeAsync<List<CisShortInfoContainerModel>>(settings, uri, RestHttpMethod.Post, searchInfoModelJson).ConfigureAwait(false);
 
         }
 
@@ -385,7 +335,7 @@ namespace Spoleto.TrueApi
         //    var searchInfoModelJson = JsonHelper.ToJson(searchCisList.ToArray());
         //    var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/api/v3/true-api/cises/info"));
 
-        //    return await InvokeAsync<List<ProductFullInfoContainerModel>>(settings, uri, HttpMethod.Post).ConfigureAwait(false);
+        //    return await InvokeAsync<List<ProductFullInfoContainerModel>>(settings, uri, RestHttpMethod.Post).ConfigureAwait(false);
         //}
 
 
@@ -403,7 +353,7 @@ namespace Spoleto.TrueApi
             var searchInfoModelQuery = HttpHelper.ToQueryString(searchInfoModel);
             var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/api/v3/true-api/facade/tnved/search?{searchInfoModelQuery}"));
 
-            return await InvokeAsync<TnvedInfoContainerModel>(settings, uri, HttpMethod.Get).ConfigureAwait(false);
+            return await InvokeAsync<TnvedInfoContainerModel>(settings, uri, RestHttpMethod.Get).ConfigureAwait(false);
         }
 
         // Добавился обязательный параметр в теле - gtin
@@ -418,7 +368,7 @@ namespace Spoleto.TrueApi
             var searchInfoModelJson = JsonHelper.ToJson(searchInfoModel);
             var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/api/v3/true-api/product/route/gtin"));
 
-            return await InvokeAsync<List<ProductGroupInfoModel>>(settings, uri, HttpMethod.Post, searchInfoModelJson).ConfigureAwait(false);
+            return await InvokeAsync<List<ProductGroupInfoModel>>(settings, uri, RestHttpMethod.Post, searchInfoModelJson).ConfigureAwait(false);
         }
 
         // Убран параметр productGroupCode из тела
@@ -433,7 +383,7 @@ namespace Spoleto.TrueApi
             var searchModelJson = JsonHelper.ToJson(searchModel);
             var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/api/v3/true-api/dispenser/tasks"));
 
-            return await InvokeAsync<DispenserTaskModel>(settings, uri, HttpMethod.Post, searchModelJson).ConfigureAwait(false);
+            return await InvokeAsync<DispenserTaskModel>(settings, uri, RestHttpMethod.Post, searchModelJson).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -448,7 +398,7 @@ namespace Spoleto.TrueApi
         {
             var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/api/v3/true-api/dispenser/tasks/{taskId}?pg={(int)productGroup}"));
 
-            return await InvokeAsync<DispenserTaskStatusModel>(settings, uri, HttpMethod.Get).ConfigureAwait(false);
+            return await InvokeAsync<DispenserTaskStatusModel>(settings, uri, RestHttpMethod.Get).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -463,7 +413,7 @@ namespace Spoleto.TrueApi
         {
             var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/api/v3/true-api/dispenser/results/{taskId}/file?pg={(int)productGroup}/file"));
 
-            return await InvokeAsync<string>(settings, uri, HttpMethod.Get, isZipResponse: true).ConfigureAwait(false);
+            return await InvokeAsync<string>(settings, uri, RestHttpMethod.Get, isZipResponse: true).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -476,7 +426,7 @@ namespace Spoleto.TrueApi
         {
             var uri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, $"/api/v3/true-api/documents/edo/tpr/ud?fileId={fileId}"));
 
-            return await InvokeAsync<ProcessingResultModel>(settings, uri, HttpMethod.Get).ConfigureAwait(false);
+            return await InvokeAsync<ProcessingResultModel>(settings, uri, RestHttpMethod.Get).ConfigureAwait(false);
         }
     }
 }

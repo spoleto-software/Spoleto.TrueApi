@@ -38,6 +38,14 @@ var trueApiProvider = new TrueApiProvider(new HttpClient(), true, trueApiTokenPr
 var trueApiProvider = new TrueApiProvider();
 ```
 
+### Запросы и ошибки
+
+Провайдеры отправляют запросы через [Spoleto.RestClient](https://github.com/spoleto-software/Spoleto.RestClient) поверх переданного `HttpClient`:
+
+- Ошибка сервиса, в том числе 404, - `HttpRequestException` с кодом ответа в `StatusCode`. Текст - из ошибки в ответе (`error_message`, `errors` или `description`), а если её нет - тело ответа.
+- В `Data` исключения - `StatusCode`, `ReasonPhrase` и `RequestUri`. У Национального каталога `RequestUri` без строки запроса: в ней ключ API.
+- На 401 провайдер сбрасывает токен и повторяет запрос с новым один раз. Повторный 401 - исключение.
+
 ### Метод получения квитанций результата обработки универсального документа по идентификатору документа.
 
 ```csharp
