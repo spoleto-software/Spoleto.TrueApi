@@ -34,27 +34,20 @@ namespace Spoleto.TrueApi.Auth.Providers
 
         private readonly HttpClient _httpClient;
         private readonly bool _disposeHttpClient;
-        private readonly TimeProvider _timeProvider;
 
         private OmsTokenModel? _token;
         private TrueApiOmsTokenProviderOption? _tokenSettings;
-        private DateTimeOffset _tokenRefreshTime;
+        private DateTime _tokenRefreshTime;
 
         public TrueApiOmsTokenProvider() : this(new HttpClient(), true)
         {
             _httpClient.ConfigureHttpClient();
         }
 
-        public TrueApiOmsTokenProvider(HttpClient httpClient, bool disposeHttpClient) : this(httpClient, disposeHttpClient, TimeProvider.System)
-        {
-        }
-
-        /// <param name="timeProvider">Часы для срока действия токена.</param>
-        public TrueApiOmsTokenProvider(HttpClient httpClient, bool disposeHttpClient, TimeProvider timeProvider)
+        public TrueApiOmsTokenProvider(HttpClient httpClient, bool disposeHttpClient)
         {
             _httpClient = httpClient;
             _disposeHttpClient = disposeHttpClient;
-            _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         }
 
         #region IDisposable
@@ -85,13 +78,13 @@ namespace Spoleto.TrueApi.Auth.Providers
             ArgumentException.ThrowIfNullOrEmpty(settings.ServiceUrl, nameof(settings.ServiceUrl));
             ArgumentException.ThrowIfNullOrEmpty(settings.OmsConnection, nameof(settings.OmsConnection));
 
-            if (_token != null && settings == _tokenSettings && _timeProvider.GetUtcNow() < _tokenRefreshTime)
+            if (_token != null && settings == _tokenSettings && GetUtcNow() < _tokenRefreshTime)
             {
                 return _token;
             }
 
             // Срок считается от начала запроса: так токен заведомо не переживёт свой срок.
-            var requestTime = _timeProvider.GetUtcNow();
+            var requestTime = GetUtcNow();
 
             // Запросы самого токена идут без токена: у клиента нет аутентификатора.
             using var restClient = new TrueApiRestClient(_httpClient);
@@ -133,5 +126,10 @@ namespace Spoleto.TrueApi.Auth.Providers
         /// <param name="certificateThumbprint">Отпечаток сертификата.</param>
         protected virtual string SignAttached(string base64Data, string certificateThumbprint)
             => CryptographyHelper.SignBase64Data(base64Data, thumbprint: certificateThumbprint);
+
+        /// <summary>
+        /// Текущее время для срока токена. Тесты подменяют его, чтобы проверить срок без ожидания.
+        /// </summary>
+        protected virtual DateTime GetUtcNow() => DateTime.UtcNow;
     }
 }

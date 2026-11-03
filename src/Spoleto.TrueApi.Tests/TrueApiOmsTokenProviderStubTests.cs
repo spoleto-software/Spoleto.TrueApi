@@ -32,7 +32,7 @@ namespace Spoleto.TrueApi.Tests
         {
             // Arrange
             var handler = new StubHttpMessageHandler(CreateKeyResponse(1), CreateTokenResponse(1));
-            using var tokenProvider = new FakeSigningOmsTokenProvider(handler, new ManualTimeProvider());
+            using var tokenProvider = new FakeSigningOmsTokenProvider(handler);
 
             // Act
             var token = await tokenProvider.GetTokenAsync(CreateSettings(inn: inn));
@@ -61,14 +61,13 @@ namespace Spoleto.TrueApi.Tests
         {
             // Arrange
             var handler = new StubHttpMessageHandler(CreateKeyResponse(1), CreateTokenResponse(1), CreateKeyResponse(2), CreateTokenResponse(2));
-            var timeProvider = new ManualTimeProvider();
-            using var tokenProvider = new FakeSigningOmsTokenProvider(handler, timeProvider);
+            using var tokenProvider = new FakeSigningOmsTokenProvider(handler);
 
             // Act
             var first = await tokenProvider.GetTokenAsync(CreateSettings());
-            timeProvider.Advance(TimeSpan.FromHours(9));
+            tokenProvider.UtcNow += TimeSpan.FromHours(9);
             var cached = await tokenProvider.GetTokenAsync(CreateSettings());
-            timeProvider.Advance(TimeSpan.FromMinutes(50));
+            tokenProvider.UtcNow += TimeSpan.FromMinutes(50);
             var renewed = await tokenProvider.GetTokenAsync(CreateSettings());
 
             // Assert
@@ -86,7 +85,7 @@ namespace Spoleto.TrueApi.Tests
         {
             // Arrange
             var handler = new StubHttpMessageHandler(CreateKeyResponse(1), CreateTokenResponse(1), CreateKeyResponse(2), CreateTokenResponse(2));
-            using var tokenProvider = new FakeSigningOmsTokenProvider(handler, new ManualTimeProvider());
+            using var tokenProvider = new FakeSigningOmsTokenProvider(handler);
 
             // Act
             var first = await tokenProvider.GetTokenAsync(CreateSettings());
@@ -106,7 +105,7 @@ namespace Spoleto.TrueApi.Tests
         {
             // Arrange
             var handler = new StubHttpMessageHandler(CreateKeyResponse(1), CreateTokenResponse(1), CreateKeyResponse(2), CreateTokenResponse(2));
-            using var tokenProvider = new FakeSigningOmsTokenProvider(handler, new ManualTimeProvider());
+            using var tokenProvider = new FakeSigningOmsTokenProvider(handler);
             await tokenProvider.GetTokenAsync(CreateSettings());
 
             // Act
@@ -130,7 +129,7 @@ namespace Spoleto.TrueApi.Tests
                 CreateResponse(HttpStatusCode.BadRequest, """{"error_message":"Ошибка при проверке подписи"}"""),
                 CreateKeyResponse(2),
                 CreateTokenResponse(2));
-            using var tokenProvider = new FakeSigningOmsTokenProvider(handler, new ManualTimeProvider());
+            using var tokenProvider = new FakeSigningOmsTokenProvider(handler);
 
             // Act
             var ex = Assert.ThrowsAsync<HttpRequestException>(() => tokenProvider.GetTokenAsync(CreateSettings()));
@@ -150,7 +149,7 @@ namespace Spoleto.TrueApi.Tests
         {
             // Arrange
             var handler = new StubHttpMessageHandler(CreateKeyResponse(1), CreateResponse(HttpStatusCode.OK, "{}"));
-            using var tokenProvider = new FakeSigningOmsTokenProvider(handler, new ManualTimeProvider());
+            using var tokenProvider = new FakeSigningOmsTokenProvider(handler);
 
             // Act & Assert
             Assert.ThrowsAsync<InvalidDataException>(() => tokenProvider.GetTokenAsync(CreateSettings()));
@@ -161,7 +160,7 @@ namespace Spoleto.TrueApi.Tests
         {
             // Arrange
             var handler = new StubHttpMessageHandler();
-            using var tokenProvider = new FakeSigningOmsTokenProvider(handler, new ManualTimeProvider());
+            using var tokenProvider = new FakeSigningOmsTokenProvider(handler);
 
             // Act & Assert
             Assert.ThrowsAsync<ArgumentException>(() => tokenProvider.GetTokenAsync(CreateSettings("")));
@@ -190,12 +189,13 @@ namespace Spoleto.TrueApi.Tests
         }
 
         /// <summary>
-        /// Провайдер, который подписывает без КриптоПро: вместо подписи - «signed:» и данные.
+        /// Провайдер, который подписывает без КриптоПро (вместо подписи - «signed:» и данные) и живёт по своим часам.
         /// </summary>
-        private sealed class FakeSigningOmsTokenProvider(HttpMessageHandler handler, TimeProvider timeProvider)
-            : TrueApiOmsTokenProvider(new HttpClient(handler), true, timeProvider)
+        private sealed class FakeSigningOmsTokenProvider(HttpMessageHandler handler) : TrueApiOmsTokenProvider(new HttpClient(handler), true)
         {
             public List<string> SignedData { get; } = [];
+
+            public DateTime UtcNow { get; set; } = new(2026, 11, 3, 9, 0, 0, DateTimeKind.Utc);
 
             protected override string SignAttached(string base64Data, string certificateThumbprint)
             {
@@ -203,15 +203,8 @@ namespace Spoleto.TrueApi.Tests
 
                 return "signed:" + base64Data;
             }
-        }
 
-        private sealed class ManualTimeProvider : TimeProvider
-        {
-            private DateTimeOffset _utcNow = new(2026, 11, 3, 9, 0, 0, TimeSpan.Zero);
-
-            public override DateTimeOffset GetUtcNow() => _utcNow;
-
-            public void Advance(TimeSpan time) => _utcNow += time;
+            protected override DateTime GetUtcNow() => UtcNow;
         }
     }
 }
