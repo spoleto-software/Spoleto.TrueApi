@@ -46,6 +46,29 @@ var trueApiProvider = new TrueApiProvider();
 - В `Data` исключения - `StatusCode`, `ReasonPhrase` и `RequestUri`. У Национального каталога `RequestUri` без строки запроса: в ней ключ API.
 - На 401 провайдер сбрасывает токен и повторяет запрос с новым один раз. Повторный 401 - исключение.
 
+### Токен СУЗ
+
+Токен для API СУЗ (Станции управления заказами) - через True API, раздел 11.1: ключ из `/auth/key`, токен из `/auth/simpleSignIn/{omsConnection}`. Это не токен методов True API, поэтому провайдер отдельный, и один экземпляр `TrueApiTokenProvider` для токена СУЗ не подходит.
+
+```csharp
+using var omsTokenProvider = new TrueApiOmsTokenProvider(); // или new TrueApiOmsTokenProvider(httpClient, false)
+
+var settings = new TrueApiOmsTokenProviderOption(
+    ServiceUrl: "https://markirovka.crpt.ru",
+    CertificateThumbprint: "thumbprint",
+    OmsConnection: "11b1abc1-f1ee-11db-1a11-f11ac11111e1"); // выдаётся при регистрации установки интеграционного решения в СУЗ
+
+var token = await omsTokenProvider.GetTokenAsync(settings);
+// token.Token - токен для запросов к API СУЗ.
+
+// СУЗ ответила 401 - сбросить токен, следующий вызов GetTokenAsync запросит новый:
+omsTokenProvider.SetTokenExpired();
+```
+
+- Токен действует 10 часов. Провайдер хранит его и обновляет за 10 минут до истечения, а с другими настройками запрашивает новый. Каждый новый токен - это подпись в КриптоПро, поэтому провайдер стоит держать один на сертификат, а не создавать на каждый запрос.
+- `Inn` в настройках нужен, только если пользователь работает по МЧД от нескольких организаций.
+- Ошибки - как у остальных провайдеров: `HttpRequestException` с текстом ошибки сервиса.
+
 ### Метод получения квитанций результата обработки универсального документа по идентификатору документа.
 
 ```csharp

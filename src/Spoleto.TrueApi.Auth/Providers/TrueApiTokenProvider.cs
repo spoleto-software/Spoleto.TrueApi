@@ -1,6 +1,4 @@
 ﻿using CIS.Cryptography;
-using Spoleto.Common;
-using Spoleto.Common.Helpers;
 using Spoleto.RestClient;
 using Spoleto.TrueApi.Auth.Clients;
 using Spoleto.TrueApi.Auth.Extensions;
@@ -60,36 +58,21 @@ namespace Spoleto.TrueApi.Auth.Providers
             // Запросы самого токена идут без токена: у клиента нет аутентификатора.
             using var restClient = new TrueApiRestClient(_httpClient);
 
-            var keyUri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, "/api/v3/true-api/auth/key"));
-            var authKey = await InvokeAsync<AuthKeyModel>(restClient, TrueApiRestClient.CreateRequest(RestHttpMethod.Get, keyUri)).ConfigureAwait(false);
+            var authKey = await TrueApiAuthHelper.GetAuthKeyAsync(restClient, settings.ServiceUrl).ConfigureAwait(false);
 
-            var data = Convert.ToBase64String(DefaultSettings.Encoding.GetBytes(authKey.Data));
             var requestModel = new TokenRequest
             {
                 Uuid = authKey.Uuid,
-                Data = CryptographyHelper.SignBase64Data(data, thumbprint: settings.CertificateThumbprint),
+                Data = CryptographyHelper.SignBase64Data(TrueApiAuthHelper.GetDataToSign(authKey), thumbprint: settings.CertificateThumbprint),
                 Inn = settings.Inn,
                 UnitedToken = settings.UnitedToken
             };
 
-            var requestContent = new StringContent(JsonHelper.ToJson(requestModel), DefaultSettings.Encoding, DefaultSettings.ContentType);
             var signInUri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, "/api/v3/true-api/auth/simpleSignIn"));
-            _token = await InvokeAsync<UnitedTokenModel>(restClient, TrueApiRestClient.CreateRequest(RestHttpMethod.Post, signInUri, requestContent)).ConfigureAwait(false);
+            var signInRequest = TrueApiRestClient.CreateRequest(RestHttpMethod.Post, signInUri, TrueApiAuthHelper.CreateJsonContent(requestModel));
+            _token = await TrueApiAuthHelper.InvokeAsync<UnitedTokenModel>(restClient, signInRequest).ConfigureAwait(false);
 
             return _token;
-        }
-
-        private static async Task<T> InvokeAsync<T>(TrueApiRestClient restClient, RestRequest request)
-        {
-            var response = await restClient.ExecuteAsStringAsync(request).ConfigureAwait(false);
-            try
-            {
-                return JsonHelper.FromJson<T>(response.Content);
-            }
-            catch (Exception e)
-            {
-                throw new Exception($"Ошибка формирования токена доступа\n{response.Content}", e);
-            }
         }
 
         public void SetTokenExpired()
