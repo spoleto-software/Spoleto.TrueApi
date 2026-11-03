@@ -13,6 +13,9 @@ namespace Spoleto.TrueApi.Auth.Providers
         private readonly HttpClient _httpClient;
         private readonly bool _disposeHttpClient;
 
+        // Запросы самого токена идут без токена: у клиента нет аутентификатора.
+        private readonly TrueApiRestClient _restClient;
+
         private UnitedTokenModel? _token;
 
         public TrueApiTokenProvider() : this(new HttpClient(), true)
@@ -24,6 +27,7 @@ namespace Spoleto.TrueApi.Auth.Providers
         {
             _httpClient = httpClient;
             _disposeHttpClient = disposeHttpClient;
+            _restClient = new TrueApiRestClient(httpClient);
         }
 
         #region IDisposable
@@ -34,6 +38,7 @@ namespace Spoleto.TrueApi.Auth.Providers
             if (disposing && !_disposed)
             {
                 _disposed = true;
+                _restClient.Dispose();
                 if (_disposeHttpClient)
                 {
                     _httpClient.Dispose();
@@ -55,10 +60,7 @@ namespace Spoleto.TrueApi.Auth.Providers
                 return _token;
             }
 
-            // Запросы самого токена идут без токена: у клиента нет аутентификатора.
-            using var restClient = new TrueApiRestClient(_httpClient);
-
-            var authKey = await TrueApiAuthHelper.GetAuthKeyAsync(restClient, settings.ServiceUrl).ConfigureAwait(false);
+            var authKey = await TrueApiAuthHelper.GetAuthKeyAsync(_restClient, settings.ServiceUrl).ConfigureAwait(false);
 
             var requestModel = new TokenRequest
             {
@@ -70,7 +72,7 @@ namespace Spoleto.TrueApi.Auth.Providers
 
             var signInUri = new Uri(UriHelper.UrlCombine(settings.ServiceUrl, "/api/v3/true-api/auth/simpleSignIn"));
             var signInRequest = TrueApiRestClient.CreateRequest(RestHttpMethod.Post, signInUri, TrueApiAuthHelper.CreateJsonContent(requestModel));
-            _token = await TrueApiAuthHelper.InvokeAsync<UnitedTokenModel>(restClient, signInRequest).ConfigureAwait(false);
+            _token = await TrueApiAuthHelper.InvokeAsync<UnitedTokenModel>(_restClient, signInRequest).ConfigureAwait(false);
 
             return _token;
         }

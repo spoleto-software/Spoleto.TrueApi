@@ -16,7 +16,8 @@ namespace Spoleto.TrueApi.Auth.Clients
     /// (error_message с description после двоеточия, errors или description), иначе тело ответа, а без тела - ReasonPhrase.
     /// </para>
     /// <para>
-    /// Клиент не освобождает <see cref="HttpClient"/> и создаётся на вызов: настройки, а с ними и токен, у методов True API свои в каждом вызове.
+    /// Клиент не освобождает <see cref="HttpClient"/>. Без аутентификатора он один на провайдер, а с <see cref="TrueApiAuthenticator"/> создаётся на вызов:
+    /// аутентификатор задаётся на весь клиент, а настройки, а с ними и токен, у методов True API свои в каждом вызове.
     /// </para>
     /// </remarks>
     public class TrueApiRestClient : RestHttpClient

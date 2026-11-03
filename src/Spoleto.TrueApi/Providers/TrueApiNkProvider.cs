@@ -16,6 +16,9 @@ namespace Spoleto.TrueApi
         private readonly HttpClient _httpClient;
         private readonly bool _disposeHttpClient;
 
+        // Ключ API - в строке запроса, токен не нужен: у клиента нет аутентификатора.
+        private readonly TrueApiRestClient _restClient;
+
         public TrueApiNkProvider() : this(new HttpClient(), true)
         {
             _httpClient.ConfigureHttpClient();
@@ -25,6 +28,7 @@ namespace Spoleto.TrueApi
         {
             _httpClient = httpClient;
             _disposeHttpClient = disposeHttpClient;
+            _restClient = new TrueApiRestClient(httpClient);
         }
 
         private Task<T> InvokeGetAsync<T>(Uri uri)
@@ -35,14 +39,12 @@ namespace Spoleto.TrueApi
         /// </summary>
         private async Task<T> InvokeAsync<T>(Uri uri, RestHttpMethod method, string requestJsonContent = null)
         {
-            using var restClient = new TrueApiRestClient(_httpClient);
-
             var content = requestJsonContent == null ? null : new StringContent(requestJsonContent, DefaultSettings.Encoding, DefaultSettings.ContentType);
 
             TextRestResponse response;
             try
             {
-                response = await restClient.ExecuteAsStringAsync(TrueApiRestClient.CreateRequest(method, uri, content)).ConfigureAwait(false);
+                response = await _restClient.ExecuteAsStringAsync(TrueApiRestClient.CreateRequest(method, uri, content)).ConfigureAwait(false);
             }
             catch (HttpRequestException ex) when (ex.Data.Contains(RequestUriDataKey))
             {
@@ -73,6 +75,7 @@ namespace Spoleto.TrueApi
             if (disposing && !_disposed)
             {
                 _disposed = true;
+                _restClient.Dispose();
                 if (_disposeHttpClient)
                 {
                     _httpClient.Dispose();
