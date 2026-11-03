@@ -30,8 +30,9 @@ namespace Spoleto.TrueApi.Auth.Models
 
         public override string? ToString()
         {
+            // Код ошибки вроде «oms-connection-not-found» без описания мало что говорит: описание идёт следом.
             if (!string.IsNullOrEmpty(ErrorMessage))
-                return ErrorMessage;
+                return string.IsNullOrEmpty(Description) || Description == ErrorMessage ? ErrorMessage : $"{ErrorMessage}: {Description}";
 
             if (Errors?.Count > 0)
                 return string.Join("; ", Errors);

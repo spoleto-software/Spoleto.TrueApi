@@ -13,7 +13,7 @@ namespace Spoleto.TrueApi.Auth.Clients
     /// <remarks>
     /// <para>
     /// Неуспешный ответ, в том числе 404, - <see cref="HttpRequestException"/> с кодом ответа. Текст - из JSON ошибки сервиса
-    /// (error_message, errors, description), иначе тело ответа, а без тела - ReasonPhrase.
+    /// (error_message с description после двоеточия, errors или description), иначе тело ответа, а без тела - ReasonPhrase.
     /// </para>
     /// <para>
     /// Клиент не освобождает <see cref="HttpClient"/> и создаётся на вызов: настройки, а с ними и токен, у методов True API свои в каждом вызове.

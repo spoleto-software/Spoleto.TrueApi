@@ -103,7 +103,8 @@ namespace Spoleto.TrueApi.Auth.Providers
             var token = await TrueApiAuthHelper.InvokeAsync<OmsTokenModel>(restClient, signInRequest).ConfigureAwait(false);
             if (string.IsNullOrEmpty(token?.Token))
             {
-                throw new InvalidDataException($"True API не вернул токен СУЗ для соединения {settings.OmsConnection}.");
+                var error = new TrueApiErrorModel { ErrorMessage = token?.ErrorMessage, Description = token?.Description }.ToString();
+                throw new InvalidDataException($"True API не вернул токен СУЗ для соединения {settings.OmsConnection}{(string.IsNullOrEmpty(error) ? "." : $": {error}")}");
             }
 
             _token = token;

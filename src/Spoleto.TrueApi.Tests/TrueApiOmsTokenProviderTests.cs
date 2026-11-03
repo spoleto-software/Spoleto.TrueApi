@@ -52,8 +52,7 @@ namespace Spoleto.TrueApi.Tests
         /// и через старый адрес «auth/cert», которым сейчас пользуется приложение.
         /// </summary>
         /// <remarks>
-        /// Печатает код и тело каждого ответа как есть: в тексте исключения провайдера есть только «error_message», а «code» и «description» теряются.
-        /// Сам токен не печатается.
+        /// Печатает код и тело каждого ответа как есть, сам токен не печатается.
         /// </remarks>
         [Test]
         [Explicit("Диагностика: три подписи в КриптоПро и три запроса токена СУЗ.")]
@@ -88,9 +87,24 @@ namespace Spoleto.TrueApi.Tests
             using var response = await httpClient.PostAsync(serviceUrl + tokenPath, new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"));
             var content = await response.Content.ReadAsStringAsync();
 
+            // Старый адрес отвечает на ошибку кодом 200, поэтому успех - это токен в теле, а не код ответа.
+            var hasToken = TryGetToken(content);
+
             TestContext.Out.WriteLine($"POST {tokenPath}{(string.IsNullOrEmpty(inn) ? "" : $", inn {inn}")}: {(int)response.StatusCode} {response.ReasonPhrase}, {response.Content.Headers.ContentType}");
-            TestContext.Out.WriteLine(response.IsSuccessStatusCode ? $"токен получен, ответ {content.Length} символов" : content);
+            TestContext.Out.WriteLine(hasToken ? "токен получен" : content);
             TestContext.Out.WriteLine();
+        }
+
+        private static bool TryGetToken(string content)
+        {
+            try
+            {
+                return JsonDocument.Parse(content).RootElement.TryGetProperty("token", out var token) && !string.IsNullOrEmpty(token.GetString());
+            }
+            catch (JsonException)
+            {
+                return false;
+            }
         }
     }
 }

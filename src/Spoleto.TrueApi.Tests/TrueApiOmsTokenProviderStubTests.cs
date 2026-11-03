@@ -144,6 +144,39 @@ namespace Spoleto.TrueApi.Tests
             });
         }
 
+        /// <summary>
+        /// Ответ старого адреса «auth/cert» на неизвестный omsConnection: описание идёт в текст исключения следом за кодом ошибки.
+        /// </summary>
+        private const string ConnectionNotFoundJson = """{"code":"003","error_message":"oms-connection-not-found","description":"Идентификатор соединения для указанного УОТ не найден"}""";
+
+        [Test]
+        public void GetToken_ServiceErrorWithDescription_ThrowsBoth()
+        {
+            // Arrange
+            var handler = new StubHttpMessageHandler(CreateKeyResponse(1), CreateResponse(HttpStatusCode.BadRequest, ConnectionNotFoundJson));
+            using var tokenProvider = new FakeSigningOmsTokenProvider(handler);
+
+            // Act
+            var ex = Assert.ThrowsAsync<HttpRequestException>(() => tokenProvider.GetTokenAsync(CreateSettings()));
+
+            // Assert
+            Assert.That(ex!.Message, Is.EqualTo("oms-connection-not-found: Идентификатор соединения для указанного УОТ не найден"));
+        }
+
+        [Test]
+        public void GetToken_ErrorWithOkStatus_ThrowsServiceDescription()
+        {
+            // Arrange
+            var handler = new StubHttpMessageHandler(CreateKeyResponse(1), CreateResponse(HttpStatusCode.OK, ConnectionNotFoundJson));
+            using var tokenProvider = new FakeSigningOmsTokenProvider(handler);
+
+            // Act
+            var ex = Assert.ThrowsAsync<InvalidDataException>(() => tokenProvider.GetTokenAsync(CreateSettings()));
+
+            // Assert
+            Assert.That(ex!.Message, Is.EqualTo($"True API не вернул токен СУЗ для соединения {OmsConnection}: oms-connection-not-found: Идентификатор соединения для указанного УОТ не найден"));
+        }
+
         [Test]
         public void GetToken_EmptyToken_Throws()
         {
@@ -151,8 +184,11 @@ namespace Spoleto.TrueApi.Tests
             var handler = new StubHttpMessageHandler(CreateKeyResponse(1), CreateResponse(HttpStatusCode.OK, "{}"));
             using var tokenProvider = new FakeSigningOmsTokenProvider(handler);
 
-            // Act & Assert
-            Assert.ThrowsAsync<InvalidDataException>(() => tokenProvider.GetTokenAsync(CreateSettings()));
+            // Act
+            var ex = Assert.ThrowsAsync<InvalidDataException>(() => tokenProvider.GetTokenAsync(CreateSettings()));
+
+            // Assert
+            Assert.That(ex!.Message, Is.EqualTo($"True API не вернул токен СУЗ для соединения {OmsConnection}."));
         }
 
         [Test]
